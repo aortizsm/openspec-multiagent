@@ -1,0 +1,11 @@
+# Dependencies installed by `node scripts/setup.mjs`
+node_modules/
+
+# Generated lockfile: the setup scripts install with npm, but this repo ships
+# no runtime dependencies of its own, so the lockfile is not authoritative.
+package-lock.json
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.log

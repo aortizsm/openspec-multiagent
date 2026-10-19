@@ -1,0 +1,34 @@
+{
+  "name": "openspec-multiagent",
+  "version": "1.1.0",
+  "description": "Multi-agent workflow for opencode and openspec",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "openspec-multiagent": "scripts/init.mjs"
+  },
+  "files": [
+    "scripts/",
+    "opencode/agents/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "check": "node scripts/check.mjs",
+    "init": "node scripts/init.mjs",
+    "install-agents": "node scripts/install-agents.mjs",
+    "install-context7": "node scripts/install-context7.mjs",
+    "install-engram": "node scripts/install-engram.mjs",
+    "test": "node tests/run.mjs"
+  },
+  "dependencies": {
+    "@fission-ai/openspec": ">=1.14.0"
+  },
+  "devDependencies": {
+    "openspec-mcp": "*",
+    "@upstash/context7-mcp": ">=4.0.0"
+  }
+}
