@@ -42,10 +42,10 @@ export async function selectMenu(title, options, { defaultIndex = 0 } = {}) {
       stdout.write(`  ${marker}${i + 1}) ${opt.label}${hint}\n`);
     });
 
-    stdout.write(`\nElige 1-${options.length} (Enter = ${options[defaultIndex].label}): `);
+    stdout.write(`\n`);
 
     const rl = createInterface({ input: stdin, output: stdout });
-    const answer = (await rl.question("")).trim();
+    const answer = (await rl.question(`Elige 1-${options.length} (Enter = ${options[defaultIndex].label}): `)).trim();
     rl.close();
 
     if (!answer) return options[defaultIndex].value;
@@ -88,10 +88,8 @@ export async function inputText(message, { fallback = "" } = {}) {
     clearScreen();
     stdout.write(`${message}\n`);
     if (fallback) stdout.write(`(Enter para usar: ${fallback})\n`);
-    stdout.write("\n> ");
-
     const rl = createInterface({ input: stdin, output: stdout });
-    const answer = await rl.question("");
+    const answer = await rl.question("> ").trim();
     rl.close();
     return answer.trim() || fallback;
   } finally {
