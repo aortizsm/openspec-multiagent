@@ -5,8 +5,19 @@
 // Linux.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { request as httpsRequest } from "node:https";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -409,6 +420,53 @@ export function findConfigWithMcpServer(serverName, cwd = process.cwd()) {
   return null;
 }
 
+// --- MCP server entries --------------------------------------------------------
+
+/** Target config file: the user-level OpenCode config (~/.config/opencode/opencode.json). */
+export function mcpConfigFile() {
+  return join(opencodeConfigDir(), "opencode.json");
+}
+
+/** True when an MCP server entry already exists in any config location. */
+export function hasMcpEntry(serverName) {
+  return Boolean(findConfigWithMcpServer(serverName));
+}
+
+/**
+ * Write (or update) an MCP server entry in the user OpenCode config under
+ * `mcp.servers.<serverName>`, forma V2 (`type: local`, `command: [...]`).
+ *
+ * Respects JSONC: refuses to rewrite a .jsonc file because JSON.stringify
+ * would silently destroy the user's comments. In that case it throws so the
+ * caller can warn and show the JSON block to paste by hand.
+ */
+export function writeMcpEntry(serverName, entry) {
+  const target = mcpConfigFile();
+  let data = {};
+  let jsonc = false;
+  let existed = false;
+  if (existsSync(target)) {
+    existed = true;
+    ({ data, jsonc } = readJsonc(target));
+    if (jsonc) {
+      const snippet = JSON.stringify(
+        { mcp: { servers: { [serverName]: entry } } },
+        null,
+        2,
+      );
+      throw new Error(
+        `${target} contains JSON comments (JSONC). Rewriting would destroy them.\n` +
+        `       Add this block by hand:\n\n${snippet}`,
+      );
+    }
+  }
+  data.mcp ??= {};
+  data.mcp.servers ??= {};
+  data.mcp.servers[serverName] = entry;
+  writeConfig(target, data);
+  return { target, existed };
+}
+
 // --- OpenSpec CLI resolution ---------------------------------------------------
 /**
  * Resolve how to invoke the OpenSpec CLI.
@@ -475,4 +533,180 @@ export function runOpenspec(resolved, args, options = {}) {
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   return result;
+}
+
+// --- Engram (optional local MCP server) -----------------------------------------
+const ENGRAM_OWNER = "Gentleman-Programming";
+const ENGRAM_REPO = "engram";
+
+/** Default directory where the Engram binary is installed. */
+export function engramBinDir() {
+  return join(homedir(), ".local", "bin");
+}
+
+/** Default path of the Engram binary. */
+export function engramBinPath() {
+  return join(engramBinDir(), "engram");
+}
+
+/** Expected asset suffix for the current platform/arch, or null when unsupported.
+ *  Real release assets are versioned, e.g. `engram_3.4.0_linux_amd64.tar.gz`,
+ *  so we match by suffix rather than a fixed file name. */
+export function engramAssetName() {
+  if (process.platform !== "linux") return null;
+  const arch = process.arch === "arm64" ? "arm64" : "amd64";
+  return `_linux_${arch}.tar.gz`;
+}
+
+/**
+ * True when `engram` is already usable: on PATH (or at ENGRAM_BIN) or at the
+ * default install location (~/.local/bin/engram).
+ */
+export function isEngramInstalled() {
+  const bin = process.env.ENGRAM_BIN || "engram";
+  const onPath =
+    bin.includes("/") || bin.includes("\\")
+      ? existsSync(bin)
+      : Boolean(which(bin));
+  return onPath || existsSync(engramBinPath());
+}
+
+/**
+ * Fetch JSON from a URL using Node's built-in `https`. GitHub requires a
+ * User-Agent header, otherwise it rejects the request.
+ */
+async function fetchJson(url) {
+  const response = await new Promise((resolve, reject) => {
+    const req = httpsRequest(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "openspec-multiagent",
+        Accept: "application/vnd.github+json",
+      },
+    }, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode, data }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`HTTP ${response.status} fetching ${url}`);
+  }
+  return JSON.parse(response.data);
+}
+
+/** Download binary content from a URL into a Buffer, following redirects. */
+async function downloadBinary(url, maxRedirects = 10) {
+  if (maxRedirects <= 0) {
+    throw new Error(`Too many redirects following ${url}`);
+  }
+  const chunks = [];
+  const response = await new Promise((resolve, reject) => {
+    const req = httpsRequest(url, {
+      method: "GET",
+      headers: { "User-Agent": "openspec-multiagent" },
+    }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode ?? 0) && res.headers.location) {
+        resolve({ redirect: res.headers.location });
+        res.resume();
+        return;
+      }
+      res.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      res.on("end", () => resolve({ status: res.statusCode, chunks }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+  if (response.redirect) {
+    return downloadBinary(response.redirect, maxRedirects - 1);
+  }
+  if ((response.status ?? 0) < 200 || (response.status ?? 0) >= 300) {
+    throw new Error(`HTTP ${response.status} downloading ${url}`);
+  }
+  return Buffer.concat(response.chunks);
+}
+
+/**
+ * Find the `engram` binary inside an extracted tarball directory.
+ */
+function findEngramBinary(dir) {
+  let found = null;
+  const walk = (d) => {
+    if (found) return;
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const full = join(d, entry.name);
+      if (entry.name === "engram" && entry.isFile()) {
+        found = full;
+        return;
+      }
+      if (entry.isDirectory()) walk(full);
+    }
+  };
+  walk(dir);
+  return found;
+}
+
+/**
+ * Download the Engram Linux binary from GitHub releases and install it into
+ * `destDir`. Uses only Node built-ins (`https`, `fs`, `child_process` for
+ * `tar`). Returns the path of the installed binary.
+ */
+export async function downloadEngram(version, destDir) {
+  if (process.platform !== "linux") {
+    throw new Error(`Engram solo se puede instalar en Linux (detectado: ${process.platform}).`);
+  }
+
+  const assetSuffix = engramAssetName();
+  if (!assetSuffix) {
+    throw new Error("No hay asset de Engram disponible para esta plataforma.");
+  }
+
+  const tag = version && version !== "latest" ? version : "latest";
+  const releaseUrl = tag === "latest"
+    ? `https://api.github.com/repos/${ENGRAM_OWNER}/${ENGRAM_REPO}/releases/latest`
+    : `https://api.github.com/repos/${ENGRAM_OWNER}/${ENGRAM_REPO}/releases/tags/${tag}`;
+
+  const release = await fetchJson(releaseUrl);
+  const asset = Array.isArray(release.assets)
+    ? release.assets.find((a) => a.name.endsWith(assetSuffix))
+    : null;
+  if (!asset || !asset.browser_download_url) {
+    throw new Error(
+      `No se encontró un asset de Engram que termine en '${assetSuffix}' en el release ${tag} de ${ENGRAM_OWNER}/${ENGRAM_REPO}.`
+    );
+  }
+
+  const tarball = await downloadBinary(asset.browser_download_url);
+
+  const tmpDir = mkdtempSync(join(tmpdir(), "engram-install-"));
+  try {
+    const tarballPath = join(tmpDir, `engram${assetSuffix}`);
+    writeFileSync(tarballPath, tarball);
+
+    const extractDir = join(tmpDir, "extract");
+    mkdirSync(extractDir, { recursive: true });
+
+    const tar = spawnSync("tar", ["-xzf", tarballPath, "-C", extractDir], {
+      encoding: "utf8",
+      shell: false,
+    });
+    if (tar.status !== 0) {
+      throw new Error(`No se pudo extraer el paquete de Engram: ${tar.stderr}`);
+    }
+
+    const binary = findEngramBinary(extractDir);
+    if (!binary) {
+      throw new Error("No se encontró el binario 'engram' dentro del paquete descargado.");
+    }
+
+    mkdirSync(destDir, { recursive: true });
+    const destination = join(destDir, "engram");
+    copyFileSync(binary, destination);
+    chmodSync(destination, 0o755);
+    return destination;
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 }

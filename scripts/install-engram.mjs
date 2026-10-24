@@ -6,9 +6,9 @@
 //
 //   Agent (OpenCode) ← stdio MCP → Engram (Go binary) → SQLite (~/.engram/engram.db)
 //
-// OpenCode V2 reads servers from `mcp.servers.<name>`. This script only writes
-// the config entry; it does NOT install the Engram binary. The user must have
-// `engram` on PATH (or set ENGRAM_BIN) before running this.
+// OpenCode V2 reads servers from `mcp.servers.<name>`. This script writes the
+// config entry and, when `engram` is not already installed, downloads and
+// installs the Linux binary from GitHub releases into ~/.local/bin/engram.
 //
 // Usage:
 //   node scripts/install-engram.mjs                    # write to user config
@@ -20,10 +20,15 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
+  downloadEngram,
+  engramBinDir,
+  engramBinPath,
   findConfigWithMcpServer,
+  isEngramInstalled,
   opencodeConfigDir,
   parseArgs,
   readJsonc,
+  which,
   writeConfig,
 } from "./lib.mjs";
 
@@ -44,7 +49,7 @@ const projectLocal = flags.has("project");
 
 // The Engram binary must already be installed on PATH. If the user set
 // ENGRAM_BIN we honour it, otherwise we call `engram` directly.
-const engramBin = process.env.ENGRAM_BIN || "engram";
+let engramBin = process.env.ENGRAM_BIN || "engram";
 
 function buildEntry() {
   return {
@@ -103,11 +108,34 @@ if (existsSync(target)) {
 data.mcp ??= {};
 data.mcp.servers ??= {};
 
+// Resolve the Engram binary to reference in the MCP entry. Prefer an explicit
+// ENGRAM_BIN, then a binary on PATH, then the default install location; when
+// none is available, download and install Engram first.
+let installed = false;
+if (!isEngramInstalled()) {
+  const destDir = engramBinDir();
+  engramBin = await downloadEngram(undefined, destDir);
+  installed = true;
+} else if (process.env.ENGRAM_BIN) {
+  engramBin = process.env.ENGRAM_BIN;
+} else if (which("engram")) {
+  engramBin = "engram";
+} else {
+  engramBin = engramBinPath();
+}
+
+if (!installed) {
+  console.log(`Engram ya está instalado en ${engramBin}.`);
+}
+
 data.mcp.servers.engram = buildEntry();
 writeConfig(target, data);
 
 console.log(`${existed ? "Updated" : "Wrote"} ${target}`);
 console.log(`  engram: local, binary ${engramBin}`);
+if (installed) {
+  console.log(`  (installed at ${engramBin})`);
+}
 console.log("");
 console.log("Next:");
 console.log("  1. Make sure the `engram` binary is on your PATH (or set ENGRAM_BIN).");

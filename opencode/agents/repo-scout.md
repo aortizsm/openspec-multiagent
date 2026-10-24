@@ -40,6 +40,7 @@ Output the report directly in your response. Do NOT persist any file and do NOT 
 
 Hard constraints
 - Do not modify any files under any circumstances.
+- Do not write to Engram memory (no `mem_save`): the MCP server may prompt you to save, but you only report findings and @architect decides what is kept.
 - Do not install dependencies.
 - Do not use network access.
 - Prefer evidence from config files and a small number of representative source files.

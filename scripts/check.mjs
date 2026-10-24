@@ -22,6 +22,7 @@ import {
   divider,
   findExistingConfig,
   formatVersion,
+  isEngramInstalled,
   readJsonc,
   report,
   which,
@@ -161,6 +162,71 @@ if (goodContext7) {
     null,
     "install the CLI ('npm i -g ctx7') or add a 'context7' entry under mcp.servers (see README)",
   );
+}
+
+// --- engram (optional) ---------------------------------------------------------
+// Engram is optional: report its status without failing the overall check.
+const engramConfigured = [];
+for (const file of configCandidates(cwd)) {
+  if (!existsSync(file)) continue;
+  try {
+    const { data } = readJsonc(file);
+    if (data?.mcp?.servers?.engram) engramConfigured.push(file);
+  } catch {
+    // Ignore unreadable/invalid configs.
+  }
+}
+const engramInstalled = isEngramInstalled();
+if (engramConfigured.length > 0) {
+  if (engramInstalled) {
+    record("engram", "ok", `configured (${engramConfigured.length}) and installed`);
+  } else {
+    record(
+      "engram",
+      "warning",
+      "configured in MCP but binary not found on PATH",
+      "install Engram or set ENGRAM_BIN",
+    );
+  }
+} else {
+  record(
+    "engram",
+    "none",
+    "not configured (optional)",
+    "run 'node scripts/setup.mjs' and accept the Engram step, or 'node scripts/install-engram.mjs'",
+  );
+}
+
+// --- mcp servers (optional) ----------------------------------------------------
+// Reports whether the filesystem and github MCP servers are configured.
+// These are optional: a missing entry is reported as "none", not a problem.
+const mcpServerNames = ["filesystem", "github"];
+const configuredMcp = new Set();
+for (const file of configCandidates(cwd)) {
+  if (!existsSync(file)) continue;
+  try {
+    const { data } = readJsonc(file);
+    const servers = data?.mcp?.servers;
+    if (servers) {
+      for (const name of mcpServerNames) {
+        if (servers[name]) configuredMcp.add(name);
+      }
+    }
+  } catch {
+    // Ignore unreadable/invalid configs.
+  }
+}
+for (const name of mcpServerNames) {
+  if (configuredMcp.has(name)) {
+    record(name, "ok", "configurado en MCP");
+  } else {
+    record(
+      name,
+      "none",
+      "no configurado (opcional)",
+      "ejecuta 'node scripts/setup.mjs' y acepta el paso de MCP servers",
+    );
+  }
 }
 
 // --- output --------------------------------------------------------------------

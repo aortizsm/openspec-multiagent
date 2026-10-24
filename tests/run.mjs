@@ -17,8 +17,15 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
+  engramAssetName,
+  hasMcpEntry,
+  isEngramInstalled,
+  mcpConfigFile,
   parseArgs,
+  readJsonc,
+  REPO_DIR,
   versionAtLeast,
+  writeMcpEntry,
 } from "../scripts/lib.mjs";
 
 const SCRIPTS = join(process.cwd(), "scripts");
@@ -146,7 +153,73 @@ test("install-engram --print: local entry with engram mcp", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. init.mjs flags and dry-run
+// 5. Engram helpers (lib.mjs)
+// ---------------------------------------------------------------------------
+test("isEngramInstalled returns a boolean", () => {
+  assert.ok(typeof isEngramInstalled() === "boolean");
+});
+
+test("engramAssetName: linux asset suffix format", () => {
+  const name = engramAssetName();
+  if (process.platform === "linux") {
+    const arch = process.arch === "arm64" ? "arm64" : "amd64";
+    assert.strictEqual(name, `_linux_${arch}.tar.gz`);
+    assert.ok(name.endsWith(".tar.gz"));
+  } else {
+    assert.strictEqual(name, null);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 5.5. MCP helpers (lib.mjs)
+// ---------------------------------------------------------------------------
+function withTempHome(fn) {
+  const home = mkdtempSync(join(tmpdir(), "osm-mcp-home-"));
+  const prev = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = home;
+  try {
+    return fn(home);
+  } finally {
+    process.env.XDG_CONFIG_HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+test("hasMcpEntry returns a boolean", () => {
+  assert.ok(typeof hasMcpEntry("filesystem") === "boolean");
+});
+
+test("writeMcpEntry writes entry and hasMcpEntry detects it", () => {
+  withTempHome(() => {
+    const entry = { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", REPO_DIR] };
+    const result = writeMcpEntry("filesystem", entry);
+    assert.ok(result.target.endsWith("opencode.json"));
+    assert.ok(hasMcpEntry("filesystem"), "hasMcpEntry should detect the entry just written");
+
+    const { data } = readJsonc(result.target);
+    assert.ok(data.mcp.servers.filesystem);
+    assert.strictEqual(data.mcp.servers.filesystem.type, "local");
+    assert.ok(data.mcp.servers.filesystem.command.includes(REPO_DIR));
+  });
+});
+
+test("writeMcpEntry writes github entry with env", () => {
+  withTempHome(() => {
+    const entry = {
+      type: "local",
+      command: ["npx", "-y", "@modelcontextprotocol/server-github"],
+      env: { GITHUB_TOKEN: "ghp_testtoken123" },
+    };
+    writeMcpEntry("github", entry);
+    assert.ok(hasMcpEntry("github"));
+
+    const { data } = readJsonc(mcpConfigFile());
+    assert.strictEqual(data.mcp.servers.github.env.GITHUB_TOKEN, "ghp_testtoken123");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. init.mjs flags and dry-run
 // ---------------------------------------------------------------------------
 test("init.mjs --help exits 0", () => {
   const r = run("init.mjs", ["--help"]);
@@ -188,6 +261,74 @@ test("init.mjs --engram bogus exits 2", () => {
   ]);
   assert.strictEqual(r.status, 2);
   assert.ok(r.stderr.includes("must be 'local' or 'none'"));
+});
+
+// ---------------------------------------------------------------------------
+// 7. setup.mjs flags and dry-run
+// ---------------------------------------------------------------------------
+test("setup.mjs --help lists --no-mcp", () => {
+  const r = run("setup.mjs", ["--help"]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes("--no-mcp"));
+});
+
+test("setup.mjs --dry-run --no-mcp does not write config", () => {
+  const home = mkdtempSync(join(tmpdir(), "osm-setup-home-"));
+  const prev = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = home;
+  try {
+    const r = run("setup.mjs", ["--dry-run", "--no-mcp", "--no-engram", "--no-context7", "--no-agents"], {
+      HOME: home,
+    });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(
+      !existsSync(join(home, "opencode.json")),
+      "dry-run --no-mcp must not write config"
+    );
+  } finally {
+    process.env.XDG_CONFIG_HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 8. check.mjs MCP report
+// ---------------------------------------------------------------------------
+test("check.mjs --json does not report a git MCP server", () => {
+  const home = mkdtempSync(join(tmpdir(), "osm-check-home-"));
+  try {
+    const r = run("check.mjs", ["--json"], {
+      HOME: home,
+      XDG_CONFIG_HOME: home,
+    });
+    let json;
+    try {
+      json = JSON.parse(r.stdout);
+    } catch {
+      assert.fail(
+        `check.mjs --json did not print JSON (exit ${r.status}): ${r.stderr || r.stdout}`
+      );
+    }
+    assert.ok(
+      Array.isArray(json.results) && json.results.length > 0,
+      "check.mjs must report at least one result"
+    );
+    const names = json.results.map((entry) => entry.name);
+    assert.ok(
+      names.includes("filesystem"),
+      `expected a filesystem MCP entry in results: ${names.join(", ")}`
+    );
+    assert.ok(
+      names.includes("github"),
+      `expected a github MCP entry in results: ${names.join(", ")}`
+    );
+    assert.ok(
+      !names.includes("git"),
+      `unexpected git MCP entry in results: ${names.join(", ")}`
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -63,6 +63,118 @@ User ──► @architect
 
 `@architect` may additionally dispatch `@diff-summarizer` at any point to get a terse, risk-flagged overview of a large diff before diving deeper.
 
+## Agent Architecture
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as @architect<br/>(primary, orchestrator)
+    participant D as @developer<br/>(subagent, implements)
+    participant R as @code-reviewer<br/>(subagent, reviews)
+    participant V as @verifier<br/>(subagent, verifies)
+    participant S as @repo-scout<br/>(subagent, scans)
+    participant X as @diff-summarizer<br/>(subagent, summarizes)
+
+    Note over U,A: Phase 1 — Specification
+    U->>A: Describe the change
+    A->>A: Preflight: verify openspec CLI >= 1.14.0 + context7
+    alt first run or repo changed
+        A->>S: Scan repository (stack, conventions, commands)
+        S-->>A: Stack report
+    end
+    A->>A: Guide user through openspec-explore / openspec-propose
+    A->>A: Build OpenSpec specification (proposal, design, tasks, spec)
+
+    Note over U,A: Phase 2 — Approval Gate
+    A->>U: Present approval menu (question tool)
+    U-->>A: Approve / Revise / Reject
+    alt revise or reject
+        A->>A: Refine design (Result Contract: status, summary, artifacts, risks, next)
+        A->>U: Present revised menu
+        U-->>A: Approve
+    end
+
+    Note over A,D,R,V: Phase 3 — Implementation Loop
+    loop until reviewer approves
+        A->>D: Delegate with openspec-apply-change skill
+        D->>D: Implement spec, follow repo conventions
+        D->>D: Apply clean-code-criteria (8 criteria)
+        D->>D: Run project checks (tests, linters, build)
+        D-->>A: Report completion with diff
+        A->>R: Send change for review
+        R->>R: Evaluate 7 steps: anchor, correctness, security, simplicity, clean-code, tests, docs
+        alt change requests
+            R-->>A: Change requests with severity (CRITICAL / WARNING / SUGGESTION)
+            A->>D: Send feedback
+        else approved
+            R-->>A: Approval
+        end
+    end
+
+    Note over A,V: Phase 4 — Independent Verification
+    A->>V: Send change for verification
+    V->>V: Execute project commands (tests, build, lint, typecheck)
+    V->>V: Map scenarios → evidence (PASS / FAIL / UNVERIFIABLE)
+    V-->>A: Verification report
+    alt FAIL present
+        A->>D: Send failure evidence
+        D->>D: Fix and re-implement
+        A->>R: Re-review (loop back to Phase 3)
+    else UNVERIFIABLE
+        A->>A: Justify or resolve missing evidence
+    else clean (no FAIL, justified UNVERIFIABLE)
+        V-->>A: Clean report
+    end
+
+    Note over A: Phase 5 — Archive
+    A->>A: Pre-archive gate (validate, tests, diff scope, purpose, docs)
+    A->>A: openspec-archive-change
+    A->>A: Sync specs to openspec/specs/
+    A-->>U: Change archived, spec synced
+```
+
+### Agents
+
+| Agent | Mode | Role | When invoked |
+|---|---|---|---|
+| [@architect](opencode/agents/architect.md) | primary | Orchestrator: drives the full loop, creates specs, delegates, evaluates reviews, archives. Never writes code. Only agent that can close a spec. | Always (first contact) |
+| [@developer](opencode/agents/developer.md) | subagent | Implements the spec, runs checks, writes documentation when visible. Applies clean-code-criteria. | After user approval |
+| [@code-reviewer](opencode/agents/code-reviewer.md) | subagent | Reviews against the OpenSpec change: correctness, security, simplicity, clean-code (8 criteria), tests, docs accuracy. Tags with CRITICAL/WARNING/SUGGESTION. | After developer reports completion |
+| [@verifier](opencode/agents/verifier.md) | subagent | Independent verification: executes project commands, maps spec scenarios to observable evidence. No-write policy. | After reviewer approves, before archive |
+| [@repo-scout](opencode/agents/repo-scout.md) | subagent | Read-only repository scan: stack, conventions, lint/test commands, structural hotspots. | First run or on repo change |
+| [@diff-summarizer](opencode/agents/diff-summarizer.md) | subagent | Terse diff summary with risk hotspots. | On-demand for large diffs |
+
+### Gates
+
+| Gate | When | What it checks |
+|---|---|---|
+| **Preflight** | Session start | OpenSpec CLI >= 1.14.0, skills loadable, context7 reachable |
+| **Result Contract** | Before delegating to developer | Design has `status`, `executive_summary`, `artifacts`, `risks`, `next_recommended` |
+| **Approval** | Before implementation | User explicitly approves via menu (never magic words) |
+| **Pre-review** | Before sending to code-reviewer | Developer checks passed, diff exists, tasks complete |
+| **Validation** | Before archiving | `openspec validate --strict` passes, tests pass, diff in scope, `## Purpose` complete, docs entry exists |
+
+### Clean Code Criteria (8)
+
+Evaluated by `@code-reviewer`, applied by `@developer`:
+
+| # | Criterion | Default severity |
+|---|---|---|
+| 1 | Meaningful names | WARNING |
+| 2 | Small functions, SRP | WARNING |
+| 3 | DRY | WARNING / SUGGESTION |
+| 4 | Explicit error handling | CRITICAL / WARNING |
+| 5 | Comments explain why, not what | SUGGESTION |
+| 6 | High cohesion, low coupling | WARNING |
+| 7 | Correct abstraction level | WARNING |
+| 8 | Developer applies clean code | (enforced by 1–7) |
+
+### Loop Order
+
+```
+@developer → @code-reviewer → @verifier → @architect archives
+```
+
 ## How to Use
 
 ### One command
@@ -106,9 +218,13 @@ cd openspec-multiagent
 node scripts/setup.mjs                    # project-local OpenSpec, remote Context7
 node scripts/setup.mjs --global           # install the openspec CLI globally instead
 node scripts/setup.mjs --context7 local   # use the local Context7 stdio server
+node scripts/setup.mjs --no-engram        # skip offering to install Engram
+node scripts/setup.mjs --no-mcp           # skip offering to configure MCP servers
 ```
 
 The scripts are plain Node (>= 20.19.0) with no dependencies, so they behave the same on Windows, macOS, and Linux.
+
+Engram is only installed on Linux. When you run the installer in a terminal on Linux it offers to download and install the Engram binary (default: no). If you accept, it is installed into `~/.local/bin/engram`, made executable, and the `engram` entry is written to your OpenCode MCP configuration (`mcp.servers.engram`). If `engram` is already on your PATH (or `ENGRAM_BIN` is set), the installer reports it and does not reinstall. On non-Linux systems the Engram step is skipped.
 
 Prefer npm? The same steps are exposed as scripts:
 
@@ -117,6 +233,7 @@ npm run setup            # = node scripts/setup.mjs
 npm run check            # = node scripts/check.mjs (preflight only)
 npm run install-agents   # copy agents without touching OpenSpec
 npm run install-context7 # configure only Context7
+npm run install-engram   # write/install the Engram MCP entry
 ```
 
 ### Context7 credentials (optional)
@@ -135,6 +252,76 @@ Use a Context7 API key for higher rate limits? [y/N]
 ```
 
 Answer `n` to the key question to stay anonymous, or `y` and paste a free key from <https://context7.com/dashboard> for higher limits. Any of `--context7 <remote|local|none>`, `--skip-context7`, `--api-key <KEY>` or `--no-api-key` answers the questions for you, which is what you want in scripts and CI. When stdin is not a terminal, the installer skips the questions and uses the defaults (remote, no key).
+
+### Engram (optional local memory)
+
+Engram is a persistent, local-only memory system for AI coding agents. It is **optional** and **not installed by default**.
+
+When it is configured, the `@architect` and `@developer` prompts use it as working memory so that long or compacted sessions keep their open threads; `@code-reviewer` does not consult it and reviews with the spec, the design and the diff. It is not active otherwise. The policy behaves the same with local and cloud models, and the OpenSpec specs (and the change design while a change is in progress) and `AGENTS.md` remain the source of truth — anything not recorded there stays unresolved.
+
+Context recovery after compaction is provided by Engram's official OpenCode plugin (`engram setup opencode`); it is not part of this repo.
+
+If `mem_save` fails because the project name does not match, run `engram init <project>` at the repository root.
+
+On Linux, `node scripts/setup.mjs` offers to download and install the Engram binary from <https://github.com/Gentleman-Programming/engram> releases. If you accept:
+
+1. It downloads the asset for your architecture (`engram-linux-amd64.tar.gz` or `engram-linux-arm64.tar.gz`).
+2. It installs the binary into `~/.local/bin/engram` and makes it executable.
+3. It writes the `engram` entry to your OpenCode config (`mcp.servers.engram = { type: "local", command: [engram, mcp] }`).
+
+If `engram` is already on your PATH (or `ENGRAM_BIN` is set), the installer reports it and does not reinstall. On non-Linux systems the Engram step is skipped.
+
+You can also wire up Engram on demand:
+
+```bash
+# Install + configure (downloads the binary on Linux)
+node scripts/install-engram.mjs
+
+# Configure only, using an existing binary
+ENGRAM_BIN=/path/to/engram node scripts/install-engram.mjs
+
+# Write to a project-local config instead of the user config
+node scripts/install-engram.mjs --project
+```
+
+If `~/.local/bin` is not on your `PATH`, OpenCode will not resolve the bare `engram` command; either add `~/.local/bin` to your `PATH` or set `ENGRAM_BIN` to the absolute binary path.
+
+### MCP servers (optional)
+
+`node scripts/setup.mjs` offers to configure two OpenCode MCP servers, one at a time (default: **no** for each):
+
+- **filesystem** — read/write project files (`@modelcontextprotocol/server-filesystem`)
+- **github** — create PRs, review issues, list releases (`@modelcontextprotocol/server-github`)
+
+They run on `npx`, so nothing is installed locally. The order of questions is filesystem → github. When you accept **github**, the installer asks for your `GITHUB_TOKEN` (Personal Access Token) and stores it under `env.GITHUB_TOKEN` in the MCP entry.
+
+Each accepted entry is written to `~/.config/opencode/opencode.json` under `mcp.servers.<name>`, forma V2:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "filesystem": {
+        "type": "local",
+        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/home/noesis/Desarrollos/MISC/opencode-openspec-multiagent"]
+      },
+      "github": {
+        "type": "local",
+        "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+        "env": { "GITHUB_TOKEN": "<tu token>" }
+      }
+    }
+  }
+}
+```
+
+If an MCP server is already configured, the installer reports it and does not overwrite it. Use `--no-mcp` to skip the MCP step entirely:
+
+```bash
+node scripts/setup.mjs --no-mcp
+```
+
+Verify that the servers are configured with `node scripts/check.mjs` — it reports each one as `ok` (configured) or `none` (optional, not configured).
 
 ### Verify the environment
 
@@ -208,10 +395,14 @@ Context7 offers higher rate limits with a free API key from <https://context7.co
 npx openspec-multiagent init --context7 remote --api-key ctx7sk-...
 ```
 
-`node scripts/install-engram.mjs` writes the Engram entry for you. It requires the `engram` binary to be on your PATH (or set `ENGRAM_BIN`). Engram is local-only — there is no cloud option in this installer:
+`node scripts/install-engram.mjs` writes the Engram entry for you. On Linux it also downloads and installs the `engram` binary into `~/.local/bin/engram` when it is not already available (on PATH or `ENGRAM_BIN`). Engram is local-only — there is no cloud option in this installer:
 
 ```bash
-ENGRAM_BIN=/path/to/engram npx openspec-multiagent init --engram local
+# Install the binary (Linux) and write the MCP entry
+node scripts/install-engram.mjs
+
+# Configure only, using an existing binary
+ENGRAM_BIN=/path/to/engram node scripts/install-engram.mjs
 ```
 
 ### Start
@@ -231,7 +422,7 @@ scripts/
   check.mjs                Preflight check (usable standalone and from agents/CI)
   install-agents.mjs       Copy agent definitions (global or project-local)
   install-context7.mjs     Write the Context7 MCP entry (V2 shape) and migrate V1
-  install-engram.mjs       Write the Engram local MCP entry (binary on PATH)
+  install-engram.mjs       Download/install the Engram binary (Linux) and write its MCP entry
 package.json               Declares OpenSpec/Context7 and pins the Node engine
 ```
 

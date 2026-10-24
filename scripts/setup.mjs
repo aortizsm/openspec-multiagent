@@ -23,9 +23,14 @@ import {
   MIN_OPENSPEC,
   REPO_DIR,
   SCRIPT_DIR,
+  askYesNo,
+  askText,
+  closePrompts,
   commandVersion,
   formatVersion,
+  hasMcpEntry,
   parseArgs,
+  writeMcpEntry,
   which,
 } from "./lib.mjs";
 
@@ -38,6 +43,8 @@ Options:
   --global              Install the openspec CLI globally (npm i -g) instead of locally
   --context7 <remote|local>   How to wire Context7 (default: remote)
   --no-agents           Skip copying the agent definitions
+  --no-engram           Skip offering to install Engram
+  --no-mcp              Skip offering to configure MCP servers
   --no-context7         Skip configuring Context7
   --dry-run             Report what is missing without installing anything
   --help                Show this help`);
@@ -46,6 +53,8 @@ Options:
 
 const GLOBAL = flags.has("global");
 const INSTALL_AGENTS = !flags.has("no-agents");
+const INSTALL_ENGRAM = !flags.has("no-engram");
+const CONFIGURE_MCP = !flags.has("no-mcp");
 const CONFIGURE_CONTEXT7 = !flags.has("no-context7");
 const DRY_RUN = flags.has("dry-run");
 const context7Mode = values.get("context7") ?? (flags.has("local") ? "local" : "remote");
@@ -158,7 +167,88 @@ if (INSTALL_AGENTS) {
   info("Skipped (--no-agents)");
 }
 
-// --- 5. preflight --------------------------------------------------------------
+// --- 5. engram (optional) ------------------------------------------------------
+step("Installing Engram (optional, local memory)");
+if (DRY_RUN) {
+  info("[dry-run] would offer to install Engram");
+} else if (process.platform !== "linux") {
+  info("Engram installation is only supported on Linux; skipped.");
+} else if (!INSTALL_ENGRAM) {
+  info("skipped (--no-engram)");
+} else {
+  const wantsEngram = await askYesNo("¿Instalar Engram (memoria local persistente)?", {
+    defaultYes: false,
+  });
+  if (!wantsEngram) {
+    info("skipped");
+  } else {
+    const result = spawnSync(process.execPath, [join(SCRIPT_DIR, "install-engram.mjs")], {
+      stdio: "inherit",
+      shell: false,
+    });
+    if (result.status !== 0) {
+      console.error("WARNING: could not install Engram automatically.");
+      console.error("         You can install it by hand and re-run: node scripts/install-engram.mjs");
+    }
+  }
+}
+
+// --- 6. MCP servers (optional) -------------------------------------------------
+step("Configuring MCP servers (optional)");
+if (DRY_RUN) {
+  info("[dry-run] would offer to configure filesystem and github MCP servers");
+} else if (!CONFIGURE_MCP) {
+  info("skipped (--no-mcp)");
+} else {
+  const mcpServers = [
+    {
+      name: "filesystem",
+      label: "lectura/escritura de archivos del proyecto",
+      command: () => ["npx", "-y", "@modelcontextprotocol/server-filesystem", REPO_DIR],
+    },
+    {
+      name: "github",
+      label: "PRs, issues, releases",
+      command: () => ["npx", "-y", "@modelcontextprotocol/server-github"],
+    },
+  ];
+
+  for (const server of mcpServers) {
+    if (hasMcpEntry(server.name)) {
+      info(`${server.name}: ya está configurado en OpenCode, sin cambios`);
+      continue;
+    }
+
+    const wants = await askYesNo(
+      `¿Configurar el MCP server '${server.name}' (${server.label})?`,
+      { defaultYes: false },
+    );
+    if (!wants) {
+      info(`${server.name}: omitido`);
+      continue;
+    }
+
+    let entry = { type: "local", command: server.command() };
+    if (server.name === "github") {
+      const token = await askText("GITHUB_TOKEN (Personal Access Token): ");
+      if (!token) {
+        info(`github: sin token, omitido`);
+        continue;
+      }
+      entry.env = { GITHUB_TOKEN: token };
+    }
+
+    try {
+      const { target, existed } = writeMcpEntry(server.name, entry);
+      info(`${server.name}: escrito en ${target}${existed ? " (actualizado)" : ""}`);
+    } catch (err) {
+      console.error(`WARNING: no se pudo escribir '${server.name}': ${err.message}`);
+    }
+  }
+}
+closePrompts();
+
+// --- 7. preflight --------------------------------------------------------------
 step("Running the preflight check");
 const checkScript = join(SCRIPT_DIR, "check.mjs");
 if (existsSync(checkScript)) {
