@@ -94,7 +94,7 @@ sequenceDiagram
         U-->>A: Approve
     end
 
-    Note over A,D,R,V: Phase 3 - Implementation Loop
+    Note over A: Phase 3 - Implementation Loop
     loop until reviewer approves
         A->>D: Delegate with openspec-apply-change skill
         D->>D: Implement spec, follow repo conventions
