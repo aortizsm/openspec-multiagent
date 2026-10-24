@@ -75,7 +75,7 @@ sequenceDiagram
     participant S as @repo-scout<br/>(subagent, scans)
     participant X as @diff-summarizer<br/>(subagent, summarizes)
 
-    Note over U,A: Phase 1 — Specification
+    Note over U,A: Phase 1 - Specification
     U->>A: Describe the change
     A->>A: Preflight: verify openspec CLI >= 1.14.0 + context7
     alt first run or repo changed
@@ -85,7 +85,7 @@ sequenceDiagram
     A->>A: Guide user through openspec-explore / openspec-propose
     A->>A: Build OpenSpec specification (proposal, design, tasks, spec)
 
-    Note over U,A: Phase 2 — Approval Gate
+    Note over U,A: Phase 2 - Approval Gate
     A->>U: Present approval menu (question tool)
     U-->>A: Approve / Revise / Reject
     alt revise or reject
@@ -94,11 +94,11 @@ sequenceDiagram
         U-->>A: Approve
     end
 
-    Note over A,D,R,V: Phase 3 — Implementation Loop
+    Note over A,D,R,V: Phase 3 - Implementation Loop
     loop until reviewer approves
         A->>D: Delegate with openspec-apply-change skill
         D->>D: Implement spec, follow repo conventions
-        D->>D: Apply clean-code-criteria (8 criteria)
+        D->>D: Apply clean-code-criteria (12 criteria)
         D->>D: Run project checks (tests, linters, build)
         D-->>A: Report completion with diff
         A->>R: Send change for review
@@ -111,7 +111,7 @@ sequenceDiagram
         end
     end
 
-    Note over A,V: Phase 4 — Independent Verification
+    Note over A,V: Phase 4 - Independent Verification
     A->>V: Send change for verification
     V->>V: Execute project commands (tests, build, lint, typecheck)
     V->>V: Map scenarios → evidence (PASS / FAIL / UNVERIFIABLE)
@@ -126,7 +126,7 @@ sequenceDiagram
         V-->>A: Clean report
     end
 
-    Note over A: Phase 5 — Archive
+    Note over A: Phase 5 - Archive
     A->>A: Pre-archive gate (validate, tests, diff scope, purpose, docs)
     A->>A: openspec-archive-change
     A->>A: Sync specs to openspec/specs/
@@ -139,7 +139,7 @@ sequenceDiagram
 |---|---|---|---|
 | [@architect](opencode/agents/architect.md) | primary | Orchestrator: drives the full loop, creates specs, delegates, evaluates reviews, archives. Never writes code. Only agent that can close a spec. | Always (first contact) |
 | [@developer](opencode/agents/developer.md) | subagent | Implements the spec, runs checks, writes documentation when visible. Applies clean-code-criteria. | After user approval |
-| [@code-reviewer](opencode/agents/code-reviewer.md) | subagent | Reviews against the OpenSpec change: correctness, security, simplicity, clean-code (8 criteria), tests, docs accuracy. Tags with CRITICAL/WARNING/SUGGESTION. | After developer reports completion |
+| [@code-reviewer](opencode/agents/code-reviewer.md) | subagent | Reviews against the OpenSpec change: correctness, security, simplicity, clean-code (12 criteria), tests, docs accuracy. Tags with CRITICAL/WARNING/SUGGESTION. | After developer reports completion |
 | [@verifier](opencode/agents/verifier.md) | subagent | Independent verification: executes project commands, maps spec scenarios to observable evidence. No-write policy. | After reviewer approves, before archive |
 | [@repo-scout](opencode/agents/repo-scout.md) | subagent | Read-only repository scan: stack, conventions, lint/test commands, structural hotspots. | First run or on repo change |
 | [@diff-summarizer](opencode/agents/diff-summarizer.md) | subagent | Terse diff summary with risk hotspots. | On-demand for large diffs |
@@ -154,20 +154,24 @@ sequenceDiagram
 | **Pre-review** | Before sending to code-reviewer | Developer checks passed, diff exists, tasks complete |
 | **Validation** | Before archiving | `openspec validate --strict` passes, tests pass, diff in scope, `## Purpose` complete, docs entry exists |
 
-### Clean Code Criteria (8)
+### Clean Code Criteria (12)
 
 Evaluated by `@code-reviewer`, applied by `@developer`:
 
 | # | Criterion | Default severity |
 |---|---|---|
-| 1 | Meaningful names | WARNING |
-| 2 | Small functions, SRP | WARNING |
-| 3 | DRY | WARNING / SUGGESTION |
-| 4 | Explicit error handling | CRITICAL / WARNING |
-| 5 | Comments explain why, not what | SUGGESTION |
-| 6 | High cohesion, low coupling | WARNING |
-| 7 | Correct abstraction level | WARNING |
-| 8 | Developer applies clean code | (enforced by 1–7) |
+| 1 | Prohibited names (18 forbidden) | WARNING |
+| 2 | Small functions (max 30 lines) | WARNING |
+| 3 | SRP (no validation + transform + persist) | WARNING |
+| 4 | DRY (> 5 lines in 2+ sites → extract) | WARNING / SUGGESTION |
+| 5 | Error anti-patterns (6 forbidden patterns) | CRITICAL / WARNING |
+| 6 | Comments (WHY not WHAT, 12 forbidden patterns) | SUGGESTION |
+| 7 | One domain per file | WARNING |
+| 8 | One abstraction level | WARNING |
+| 9 | Max 3 parameters | WARNING |
+| 10 | No boolean flags | WARNING |
+| 11 | Extract conditionals (> 2 conditions → named function) | WARNING |
+| 12 | Positive boolean names (no `isNot`, `hasNo`, `notFound`) | WARNING |
 
 ### Loop Order
 
