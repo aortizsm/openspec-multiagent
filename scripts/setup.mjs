@@ -42,10 +42,6 @@ if (flags.has("help")) {
 Options:
   --global              Install the openspec CLI globally (npm i -g) instead of locally
   --context7 <remote|local>   How to wire Context7 (default: remote)
-  --no-agents           Skip copying the agent definitions
-  --no-engram           Skip offering to install Engram
-  --no-codegraph        Skip offering to install CodeGraph
-  --no-mcp              Skip offering to configure MCP servers
   --no-context7         Skip configuring Context7
   --dry-run             Report what is missing without installing anything
   --help                Show this help`);
@@ -53,10 +49,6 @@ Options:
 }
 
 const GLOBAL = flags.has("global");
-const INSTALL_AGENTS = !flags.has("no-agents");
-const INSTALL_ENGRAM = !flags.has("no-engram");
-const INSTALL_CODEGRAPH = !flags.has("no-codegraph");
-const CONFIGURE_MCP = !flags.has("no-mcp");
 const CONFIGURE_CONTEXT7 = !flags.has("no-context7");
 const DRY_RUN = flags.has("dry-run");
 const context7Mode = values.get("context7") ?? (flags.has("local") ? "local" : "remote");
@@ -158,90 +150,77 @@ if (CONFIGURE_CONTEXT7) {
 
 // --- 4. agents -----------------------------------------------------------------
 step("Installing the OpenCode agent definitions");
-if (INSTALL_AGENTS) {
+if (DRY_RUN) {
+  info('[dry-run] would install agent definitions');
+} else {
   const args = [join(SCRIPT_DIR, "install-agents.mjs")];
   if (DRY_RUN) args.push("--dry-run");
   const result = spawnSync(process.execPath, args, { stdio: "inherit", shell: false });
   if (result.status !== 0) {
-    console.error("WARNING: could not install the agent definitions.");
+    console.error("ERROR: could not install the agent definitions.");
+    process.exit(1);
   }
-} else {
-  info("Skipped (--no-agents)");
+  info("Agent definitions installed");
 }
 
-// --- 5. engram (optional) ------------------------------------------------------
-step("Installing Engram (optional, local memory)");
+// --- 5. codegraph (mandatory) --------------------------------------------------
+step("Installing CodeGraph (semantic code graph)");
 if (DRY_RUN) {
-  info("[dry-run] would offer to install Engram");
+  info('[dry-run] would install CodeGraph');
+} else {
+  if (!npm) {
+    console.error('ERROR: npm is required to install CodeGraph.');
+    process.exit(1);
+  }
+  info('npm install (resolves @colbymchenry/codegraph)');
+  if (!npmInstall(['install'])) {
+    console.error('ERROR: npm install failed.');
+    process.exit(1);
+  }
+  const codegraphOk = which('codegraph');
+  if (!codegraphOk) {
+    console.error('ERROR: codegraph CLI not found on PATH after install.');
+    console.error('       Try: npm i -g @colbymchenry/codegraph');
+    process.exit(1);
+  }
+  info('Wiring CodeGraph to OpenCode...');
+  const result = spawnSync(
+    codegraphOk,
+    ['install', '--target=opencode', '--location=global', '--yes'],
+    { stdio: 'inherit', shell: false },
+  );
+  if (result.status !== 0) {
+    console.error('ERROR: could not wire CodeGraph to OpenCode.');
+    console.error('       Run manually: codegraph install --target=opencode --location=global --yes');
+    process.exit(1);
+  }
+  info('CodeGraph wired to OpenCode');
+}
+
+// --- 7. engram (mandatory, local memory) ---------------------------------------
+step("Installing Engram (local memory)");
+if (DRY_RUN) {
+  info('[dry-run] would install Engram');
 } else if (process.platform !== "linux") {
-  info("Engram installation is only supported on Linux; skipped.");
-} else if (!INSTALL_ENGRAM) {
-  info("skipped (--no-engram)");
+  console.error("ERROR: Engram requires Linux.");
+  process.exit(1);
 } else {
-  const wantsEngram = await askYesNo("¿Instalar Engram (memoria local persistente)?", {
-    defaultYes: false,
+  const result = spawnSync(process.execPath, [join(SCRIPT_DIR, "install-engram.mjs")], {
+    stdio: "inherit",
+    shell: false,
   });
-  if (!wantsEngram) {
-    info("skipped");
-  } else {
-    const result = spawnSync(process.execPath, [join(SCRIPT_DIR, "install-engram.mjs")], {
-      stdio: "inherit",
-      shell: false,
-    });
-    if (result.status !== 0) {
-      console.error("WARNING: could not install Engram automatically.");
-      console.error("         You can install it by hand and re-run: node scripts/install-engram.mjs");
-    }
+  if (result.status !== 0) {
+    console.error("ERROR: could not install Engram.");
+    console.error("       Run manually: node scripts/install-engram.mjs");
+    process.exit(1);
   }
+  info("Engram installed");
 }
 
-// --- 5.5. CodeGraph (optional, semantic code graph) -----------------------------
-step('Installing CodeGraph (optional, semantic code graph)');
+// --- 8. MCP servers (mandatory) ------------------------------------------------
+step("Configuring MCP servers");
 if (DRY_RUN) {
-  info('[dry-run] would offer to install CodeGraph');
-} else if (!INSTALL_CODEGRAPH) {
-  info('skipped (--no-codegraph)');
-} else if (!INSTALL_ENGRAM) {
-  info('skipped (--no-engram implied, skipping optional tools)');
-} else {
-  const wantsCodegraph = await askYesNo('¿Instalar CodeGraph (grafo semántico del codebase)?', {
-    defaultYes: false,
-  });
-  if (!wantsCodegraph) {
-    info('skipped');
-  } else {
-    if (!npm) {
-      console.error('WARNING: npm is required to install CodeGraph.');
-      console.error('         You can install it later: npm i -g @colbymchenry/codegraph');
-    } else {
-      info('npm install (resolves @colbymchenry/codegraph)');
-      if (!npmInstall(['install'])) {
-        console.error('WARNING: npm install failed, CodeGraph CLI may not be available.');
-      }
-      const codegraphOk = which('codegraph');
-      if (!codegraphOk) {
-        console.error('WARNING: codegraph CLI not found on PATH. Add it and re-run.');
-      } else {
-        const result = spawnSync(
-          codegraphOk,
-          ['install', '--target=opencode', '--location=global', '--yes'],
-          { stdio: 'inherit', shell: false },
-        );
-        if (result.status !== 0) {
-          console.error('WARNING: could not wire CodeGraph to OpenCode automatically.');
-          console.error('         Run manually: codegraph install --target=opencode --location=global --yes');
-        }
-      }
-    }
-  }
-}
-
-// --- 6. MCP servers (optional) -------------------------------------------------
-step("Configuring MCP servers (optional)");
-if (DRY_RUN) {
-  info("[dry-run] would offer to configure filesystem and github MCP servers");
-} else if (!CONFIGURE_MCP) {
-  info("skipped (--no-mcp)");
+  info('[dry-run] would configure filesystem and github MCP servers');
 } else {
   const mcpServers = [
     {
@@ -258,16 +237,7 @@ if (DRY_RUN) {
 
   for (const server of mcpServers) {
     if (hasMcpEntry(server.name)) {
-      info(`${server.name}: ya está configurado en OpenCode, sin cambios`);
-      continue;
-    }
-
-    const wants = await askYesNo(
-      `¿Configurar el MCP server '${server.name}' (${server.label})?`,
-      { defaultYes: false },
-    );
-    if (!wants) {
-      info(`${server.name}: omitido`);
+      info(`${server.name}: ya está configurado, sin cambios`);
       continue;
     }
 
@@ -275,8 +245,8 @@ if (DRY_RUN) {
     if (server.name === "github") {
       const token = await askText("GITHUB_TOKEN (Personal Access Token): ");
       if (!token) {
-        info(`github: sin token, omitido`);
-        continue;
+        console.error("ERROR: GITHUB_TOKEN is required for the github MCP server.");
+        process.exit(1);
       }
       entry.env = { GITHUB_TOKEN: token };
     }
@@ -285,11 +255,12 @@ if (DRY_RUN) {
       const { target, existed } = writeMcpEntry(server.name, entry);
       info(`${server.name}: escrito en ${target}${existed ? " (actualizado)" : ""}`);
     } catch (err) {
-      console.error(`WARNING: no se pudo escribir '${server.name}': ${err.message}`);
+      console.error(`ERROR: no se pudo escribir '${server.name}': ${err.message}`);
+      process.exit(1);
     }
   }
+  closePrompts();
 }
-closePrompts();
 
 // --- 7. preflight --------------------------------------------------------------
 step("Running the preflight check");

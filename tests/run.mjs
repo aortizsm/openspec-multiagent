@@ -266,24 +266,24 @@ test("init.mjs --engram bogus exits 2", () => {
 // ---------------------------------------------------------------------------
 // 7. setup.mjs flags and dry-run
 // ---------------------------------------------------------------------------
-test("setup.mjs --help lists --no-mcp", () => {
+test("setup.mjs --help lists --dry-run", () => {
   const r = run("setup.mjs", ["--help"]);
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.ok(r.stdout.includes("--no-mcp"));
+  assert.ok(r.stdout.includes("--dry-run"));
 });
 
-test("setup.mjs --dry-run --no-mcp does not write config", () => {
+test("setup.mjs --dry-run does not write config", () => {
   const home = mkdtempSync(join(tmpdir(), "osm-setup-home-"));
   const prev = process.env.XDG_CONFIG_HOME;
   process.env.XDG_CONFIG_HOME = home;
   try {
-    const r = run("setup.mjs", ["--dry-run", "--no-mcp", "--no-engram", "--no-context7", "--no-agents"], {
+    const r = run("setup.mjs", ["--dry-run"], {
       HOME: home,
     });
     assert.strictEqual(r.status, 0, r.stderr);
     assert.ok(
       !existsSync(join(home, "opencode.json")),
-      "dry-run --no-mcp must not write config"
+      "dry-run must not write config"
     );
   } finally {
     process.env.XDG_CONFIG_HOME = prev;
