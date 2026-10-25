@@ -24,28 +24,7 @@ permissions:
     resource: "npx openspec *"
     effect: allow
   - action: shell
-    resource: "git status*"
-    effect: allow
-  - action: shell
-    resource: "git diff*"
-    effect: allow
-  - action: shell
-    resource: "git log*"
-    effect: allow
-  - action: shell
-    resource: "git show*"
-    effect: allow
-  - action: shell
-    resource: "git rev-parse*"
-    effect: allow
-  - action: shell
-    resource: "git add*"
-    effect: allow
-  - action: shell
-    resource: "git commit*"
-    effect: allow
-  - action: shell
-    resource: "git push*"
+    resource: "git *"
     effect: allow
   - action: shell
     resource: "node tests/*"
