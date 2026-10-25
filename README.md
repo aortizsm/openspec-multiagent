@@ -32,13 +32,13 @@ flowchart TD
     Developer -->|"Done"| Architect
 
     Architect -->|"Code review"| CodeRev["@code-reviewer<br/>Clean code + tests"]
-    CodeRev -.-> "Fix needed" Developer
+    CodeRev -.->|Fix needed| Developer
     CodeRev -->|"Approved"| SecRev["@security-reviewer<br/>12 security criteria"]
 
-    SecRev -.-> "Fix needed" Developer
+    SecRev -.->|Fix needed| Developer
     SecRev -->|"Approved"| Verifier["@verifier<br/>Independent verify"]
 
-    Verifier -.-> "FAIL" Developer
+    Verifier -.->|FAIL| Developer
     Verifier -->|"Clean"| Architect
 
     Architect -->|"Archive"| Done["✅ Change archived"]
