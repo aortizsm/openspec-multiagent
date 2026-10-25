@@ -1,4 +1,20 @@
 # OpenCode OpenSpec Multi-Agent
+<!-- LANG-SELECTOR START -->
+
+<div align="center">
+
+<strong>🌐 Language / Idioma:</strong>
+
+- 🇺🇸 <a href="#english">English</a> — default
+- 🇦🇷 <a href="#spanish">Español</a>
+
+</div>
+
+<!-- LANG-SELECTOR END -->
+
+
+<!-- ENGLISH -->
+<a id="english"></a>
 
 ## Agents
 
@@ -38,6 +54,12 @@ flowchart TD
 | **@repo-scout** | Read-only scan: stack, conventions, lint/test commands. |
 
 A multi-agent orchestrated development workflow that uses [OpenSpec](https://openspec.dev) as the source of truth for product and architecture requirements. Agents collaborate in a structured loop — from specification through implementation to review — keeping every change grounded in a written spec before the implementation starts.
+
+<details>
+<summary><strong>🇦🇷 Versión en Español</strong> — click para expandir</summary>
+
+<!-- SPANISH -->
+<a id="spanish"></a>
 
 ## How it works
 
@@ -91,6 +113,9 @@ User describes change -> @architect builds OpenSpec spec -> User approves
 - @developer **nunca aprueba su propio trabajo** — siempre pasa por revisión
 - @verifier **nunca asume** — ejecuta comandos reales para confirmar
 - Todo queda registrado: specs, diseños, diffs, reportes de revisión y verificación
+
+</details>
+
 
 ## Requirements
 
