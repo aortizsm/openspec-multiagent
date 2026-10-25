@@ -16,15 +16,6 @@ permissions:
     effect: allow
   - action: shell
     resource: "*"
-    effect: deny
-  - action: shell
-    resource: "openspec *"
-    effect: allow
-  - action: shell
-    resource: "npx openspec *"
-    effect: allow
-  - action: shell
-    resource: "git *"
     effect: allow
   - action: shell
     resource: "node tests/*"
