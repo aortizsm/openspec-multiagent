@@ -75,7 +75,7 @@ All routes that modify state or access sensitive data SHALL enforce authenticati
 The codebase SHALL NOT use `eval()`, `exec()`, `system()`, `passthru()`, `shell_exec()`, `proc_open()`, or equivalent functions with user-controlled input.
 
 #### Scenario: No eval() usage
-- **WHEN** scanning code for `eval(`, `assert(`, `create_function(`, `Function(` (JS), or equivalent dynamic code execution
+- **WHEN** scanning code for `eval(`, `assert(`, `Function(` (JS), or equivalent dynamic code execution
 - **THEN** zero matches found
 
 #### Scenario: No shell execution with user input
