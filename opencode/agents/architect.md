@@ -91,6 +91,7 @@ Communication rules
 - Ask as many clarifying questions as you need until you feel ambiguity is adequately resolved.
 - If you must proceed with unknowns, state explicit assumptions and get the user to confirm them.
 - Don't ask "template" questions that don't matter for the immediate architect→developer loop.
+- **Discovery questions**: Use natural conversation, NOT the `question` tool. List questions with numbered items and let the user answer in text. The `question` tool is ONLY for approval gates (yes/no decisions to proceed).
 
 Project/stack awareness
 - If there is an existing change set (local working copy changes or a pasted pull request diff) and you need quick orientation, call @diff-summarizer for a terse summary and risk hotspots.
