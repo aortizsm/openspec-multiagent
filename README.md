@@ -6,7 +6,7 @@
 <strong>🌐 Language / Idioma:</strong>
 
 - 🇺🇸 <a href="#english">English</a> — default
-- 🇦🇷 <a href="#spanish">Español</a>
+- 🇨🇱 <a href="#spanish">Español</a>
 
 </div>
 
@@ -32,13 +32,13 @@ flowchart TD
     Developer -->|"Done"| Architect
 
     Architect -->|"Code review"| CodeRev["@code-reviewer<br/>Clean code + tests"]
-    CodeRev --|"Fix needed"| Developer
+    CodeRev -.-> "Fix needed" Developer
     CodeRev -->|"Approved"| SecRev["@security-reviewer<br/>12 security criteria"]
 
-    SecRev --|"Fix needed"| Developer
+    SecRev -.-> "Fix needed" Developer
     SecRev -->|"Approved"| Verifier["@verifier<br/>Independent verify"]
 
-    Verifier --|"FAIL"| Developer
+    Verifier -.-> "FAIL" Developer
     Verifier -->|"Clean"| Architect
 
     Architect -->|"Archive"| Done["✅ Change archived"]
@@ -56,7 +56,7 @@ flowchart TD
 A multi-agent orchestrated development workflow that uses [OpenSpec](https://openspec.dev) as the source of truth for product and architecture requirements. Agents collaborate in a structured loop — from specification through implementation to review — keeping every change grounded in a written spec before the implementation starts.
 
 <details>
-<summary><strong>🇦🇷 Versión en Español</strong> — click para expandir</summary>
+<summary><strong>🇨🇱 Versión en Español</strong> — click para expandir</summary>
 
 <!-- SPANISH -->
 <a id="spanish"></a>
