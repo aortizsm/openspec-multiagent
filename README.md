@@ -39,6 +39,59 @@ flowchart TD
 
 A multi-agent orchestrated development workflow that uses [OpenSpec](https://openspec.dev) as the source of truth for product and architecture requirements. Agents collaborate in a structured loop — from specification through implementation to review — keeping every change grounded in a written spec before the implementation starts.
 
+## How it works
+
+```
+User describes change -> @architect builds OpenSpec spec -> User approves
+                                                         |
+                                                         v
+                                              @developer writes code
+                                                         |
+                                              +----------+----------+
+                                              |                     |
+                                              v                     v
+                                       @code-reviewer     @security-reviewer
+                                       (12 clean code)   (12 security rules)
+                                              |                     |
+                                              +----------+----------+
+                                                         |
+                                                         v
+                                                  @verifier runs tests
+                                                  maps spec -> evidence
+                                                         |
+                                              +----------+----------+
+                                              |                     |
+                                         PASS ok                  FAIL no
+                                              |                     |
+                                              v                     v
+                                        @architect             @developer fixes
+                                        archives spec          loop restarts
+```
+
+**En 5 pasos:**
+
+1. **Spec** - @architect trabaja con vos para escribir un spec en OpenSpec: qué se va a hacer, por qué, y cómo se mide que está bien. Todo queda en archivos (proposal.md, design.md, tasks.md, spec.md).
+
+2. **Implementación** - @developer escribe el código siguiendo el spec. No adivina: cada task del spec se traduce en código.
+
+3. **Revisión** - Dos agentes revisan en paralelo:
+   - @code-reviewer: verifica código limpio (12 reglas objetivas: nombres, tamaño de funciones, SRP, DRY, etc.)
+   - @security-reviewer: verifica seguridad (12 reglas objetivas: inyección SQL, XSS, auth, tokens, etc.)
+   - Ambos pueden pedir correcciones. El loop repite hasta que ambos aprueban.
+
+4. **Verificación independiente** - @verifier es el último filtro. No confía en las palabras de nadie: ejecuta los comandos reales del proyecto (npm test, openspec validate, etc.) y mapea cada scenario del spec a evidencia observable. Devuelve un reporte por escenario:
+   - **PASS** - el comportamiento existe y está confirmado
+   - **FAIL** - algo no coincide, vuelve al developer
+   - **UNVERIFIABLE** - no se puede automatizar, se documenta y justifica
+
+5. **Archive** - Solo @architect puede cerrar un spec. Verifica que todo pase (openspec validate --strict, sin FAILs, diff en scope) y archiva el cambio, sincronizando los requisitos al spec principal.
+
+**Reglas clave:**
+- @architect **nunca escribe código** — solo orquesta, especifica y archiva
+- @developer **nunca aprueba su propio trabajo** — siempre pasa por revisión
+- @verifier **nunca asume** — ejecuta comandos reales para confirmar
+- Todo queda registrado: specs, diseños, diffs, reportes de revisión y verificación
+
 ## Requirements
 
 The workflow depends on the OpenSpec CLI and its generated skills:
