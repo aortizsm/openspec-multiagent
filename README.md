@@ -1,17 +1,43 @@
 # OpenCode OpenSpec Multi-Agent
 
-A multi-agent orchestrated development workflow that uses [OpenSpec](https://openspec.dev) as the source of truth for product and architecture requirements. Agents collaborate in a structured loop — from specification through implementation to review — keeping every change grounded in a written spec before the implementation starts.
-
 ## Agents
 
-| Agent | Mode | Role |
-|---|---|---|
-| [@architect](opencode/agents/architect.md) | primary | Drives the full delivery loop: clarifies requirements, creates OpenSpec specifications, delegates implementation, and evaluates review output. Never writes code itself, and is the only agent that closes/archives a spec. |
-| [@developer](opencode/agents/developer.md) | subagent | Implements the spec assigned by `@architect` using the `openspec-apply-change` skill. Runs all checks before reporting completion. |
-| [@code-reviewer](opencode/agents/code-reviewer.md) | subagent | Reviews every change against the OpenSpec change definition. Issues actionable change requests or approves; cannot modify code and does not close specs. |
-| [@security-reviewer](opencode/agents/security-reviewer.md) | subagent | Evaluates code against 12 objective, language-agnostic security criteria. Tags findings CRITICAL/WARNING/SUGGESTION. Mandatory gate before `@verifier`. |
-| [@repo-scout](opencode/agents/repo-scout.md) | subagent | Scans the repository read-only and reports detected stack, conventions, linting/test commands, and structural hotspots directly in its response. |
-| [@diff-summarizer](opencode/agents/diff-summarizer.md) | subagent | Produces a terse, high-signal summary of git diffs, flagging risk hotspots so `@architect` and `@code-reviewer` can orient quickly. |
+```mermaid
+flowchart TD
+    User["👤 User"] -->|"Describe your change"| Architect["@architect<br/>Orchestrator"]
+
+    Architect -->|"Scan repo"| Scout["@repo-scout<br/>Read-only"]
+    Scout -->|"Stack & conventions"| Architect
+
+    Architect -->|"Build spec"| Spec["📋 OpenSpec spec"]
+    User -->|"Approve / Revise"| Architect
+
+    Architect -->|"Implement"| Developer["@developer<br/>Writes code"]
+    Developer -->|"Done"| Architect
+
+    Architect -->|"Code review"| CodeRev["@code-reviewer<br/>Clean code + tests"]
+    CodeRev --|"Fix needed"| Developer
+    CodeRev -->|"Approved"| SecRev["@security-reviewer<br/>12 security criteria"]
+
+    SecRev --|"Fix needed"| Developer
+    SecRev -->|"Approved"| Verifier["@verifier<br/>Independent verify"]
+
+    Verifier --|"FAIL"| Developer
+    Verifier -->|"Clean"| Architect
+
+    Architect -->|"Archive"| Done["✅ Change archived"]
+```
+
+| Agent | Role |
+|---|---|
+| **@architect** | Orchestrator: drives the loop, creates specs, delegates, archives. Never writes code. |
+| **@developer** | Implements the spec and runs project checks. |
+| **@code-reviewer** | Reviews code against clean-code criteria (12 rules). |
+| **@security-reviewer** | Reviews code against security criteria (12 rules). |
+| **@verifier** | Independent verification: runs tests, maps spec scenarios to evidence. |
+| **@repo-scout** | Read-only scan: stack, conventions, lint/test commands. |
+
+A multi-agent orchestrated development workflow that uses [OpenSpec](https://openspec.dev) as the source of truth for product and architecture requirements. Agents collaborate in a structured loop — from specification through implementation to review — keeping every change grounded in a written spec before the implementation starts.
 
 ## Requirements
 
