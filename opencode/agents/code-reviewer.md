@@ -171,11 +171,16 @@ How to review
    - Flag obvious issues: injection risks, unsafe string building around queries/commands, path traversal, logging secrets/sensitive data, missing auth checks where clearly required by context, insecure defaults, risky deserialization, etc.
    - If a new dependency was added, sanity-check that it is reasonable and not clearly risky/unnecessary.
 
-4) Simplicity and maintainability
+4) Security criteria reference (delegated to @security-reviewer)
+   - The 12 security criteria are defined in the `security-criteria` spec (`openspec/specs/security-criteria/spec.md`).
+   - @security-reviewer performs the deep security evaluation; @code-reviewer's security check is a surface-level sanity pass.
+   - Do not duplicate the 12 security criteria here — that is @security-reviewer's responsibility.
+
+5) Simplicity and maintainability
    - Flag overengineering, unnecessary abstraction, or complexity that doesn't buy clear value.
    - Opportunistic refactors are OK if they materially improve readability/safety and remain tightly related to the task.
 
-5) Clean Code (12 objective criteria from `clean-code-criteria` spec)
+6) Clean Code (12 objective criteria from `clean-code-criteria` spec)
     The @code-reviewer MUST evaluate these 12 criteria using objective rules. No interpretation needed.
 
     | # | Criterion | Rule | Severity |
@@ -195,14 +200,14 @@ How to review
 
     Evaluation: check each criterion against the objective rule. Flag violations with the specified severity.
 
-6) Tests (high ROI only; enforce this)
+7) Tests (high ROI only; enforce this)
    - Ensure tests were added/updated and that they provide high ROI:
      - Prefer tests across meaningful boundaries or for high-risk logic and tricky edge cases.
      - Request targeted tests for regressions or failure-prone behavior.
      - Push back on low-value tests that merely restate trivial behavior or overfit implementation details.
    - If tests are missing where risk is high, request specific, minimal tests.
 
-7) Documentation accuracy (no style review)
+8) Documentation accuracy (no style review)
    - For a change that alters behavior, configuration or usage, check that `docs/changes/<date>-<change>.md` and the affected `docs/guides/<capability>.md` exist in the diff and match it.
    - Compare file names, paths, commands and described behavior against the diff. A mismatch that breaks usage — a command that no longer exists, a renamed file still cited under its old name — is `CRITICAL`.
    - A minor imprecision — documentation describes behavior the diff does not implement — is `WARNING`; ask to fix the doc or the code.

@@ -9,6 +9,7 @@ A multi-agent orchestrated development workflow that uses [OpenSpec](https://ope
 | [@architect](opencode/agents/architect.md) | primary | Drives the full delivery loop: clarifies requirements, creates OpenSpec specifications, delegates implementation, and evaluates review output. Never writes code itself, and is the only agent that closes/archives a spec. |
 | [@developer](opencode/agents/developer.md) | subagent | Implements the spec assigned by `@architect` using the `openspec-apply-change` skill. Runs all checks before reporting completion. |
 | [@code-reviewer](opencode/agents/code-reviewer.md) | subagent | Reviews every change against the OpenSpec change definition. Issues actionable change requests or approves; cannot modify code and does not close specs. |
+| [@security-reviewer](opencode/agents/security-reviewer.md) | subagent | Evaluates code against 12 objective, language-agnostic security criteria. Tags findings CRITICAL/WARNING/SUGGESTION. Mandatory gate before `@verifier`. |
 | [@repo-scout](opencode/agents/repo-scout.md) | subagent | Scans the repository read-only and reports detected stack, conventions, linting/test commands, and structural hotspots directly in its response. |
 | [@diff-summarizer](opencode/agents/diff-summarizer.md) | subagent | Produces a terse, high-signal summary of git diffs, flagging risk hotspots so `@architect` and `@code-reviewer` can orient quickly. |
 
@@ -48,6 +49,12 @@ User ──► @architect
              │       │
              │       ├─ change requests ──► @developer (loop)
              │       │
+             │       └─ approved ──► @security-reviewer
+             │
+             ├─► @security-reviewer
+             │       │
+             │       ├─ change requests ──► @developer (loop)
+             │       │
              │       └─ approved ──► @architect
              │
              └─► @architect closes the spec (openspec-archive-change)
@@ -57,9 +64,10 @@ User ──► @architect
 2. **Discovery** — `@architect` inspects the repo (via `@repo-scout` if needed) and collaborates with the user to define an OpenSpec specification using the `openspec-explore` and `openspec-propose` skills.
 3. **Approval gate** — implementation only starts after the user explicitly approves.
 4. **Implementation** — `@developer` applies the spec (`openspec-apply-change`), follows existing repo conventions, adds tests, and validates with linters/type-checkers before reporting back.
-5. **Review** — `@code-reviewer` reads the OpenSpec change, runs `git diff`, checks correctness, security, and test coverage, and either requests changes or approves.
-6. **Loop** — steps 4–5 repeat until `@code-reviewer` approves and `@architect` is satisfied.
-7. **Close** — `@architect` archives the change with `openspec-archive-change`, syncing the requirements into `openspec/specs/`. Only `@architect` closes a spec.
+5. **Code review** — `@code-reviewer` reads the OpenSpec change, runs `git diff`, checks correctness, security, and test coverage, and either requests changes or approves.
+6. **Security review** — `@security-reviewer` evaluates code against 12 objective security criteria. CRITICAL findings block progression.
+7. **Loop** — steps 4–6 repeat until `@code-reviewer` and `@security-reviewer` both approve and `@architect` is satisfied.
+8. **Close** — `@architect` archives the change with `openspec-archive-change`, syncing the requirements into `openspec/specs/`. Only `@architect` closes a spec.
 
 `@architect` may additionally dispatch `@diff-summarizer` at any point to get a terse, risk-flagged overview of a large diff before diving deeper.
 
@@ -71,16 +79,17 @@ sequenceDiagram
     participant A as @architect<br/>(primary, orchestrator)
     participant D as @developer<br/>(subagent, implements)
     participant R as @code-reviewer<br/>(subagent, reviews)
+    participant S as @security-reviewer<br/>(subagent, security)
     participant V as @verifier<br/>(subagent, verifies)
-    participant S as @repo-scout<br/>(subagent, scans)
+    participant S2 as @repo-scout<br/>(subagent, scans)
     participant X as @diff-summarizer<br/>(subagent, summarizes)
 
     Note over U,A: Phase 1 - Specification
     U->>A: Describe the change
     A->>A: Preflight: verify openspec CLI >= 1.14.0 + context7
     alt first run or repo changed
-        A->>S: Scan repository (stack, conventions, commands)
-        S-->>A: Stack report
+        A->>S2: Scan repository (stack, conventions, commands)
+        S2-->>A: Stack report
     end
     A->>A: Guide user through openspec-explore / openspec-propose
     A->>A: Build OpenSpec specification (proposal, design, tasks, spec)
@@ -95,19 +104,30 @@ sequenceDiagram
     end
 
     Note over A: Phase 3 - Implementation Loop
-    loop until reviewer approves
+    loop until both reviewers approve
         A->>D: Delegate with openspec-apply-change skill
         D->>D: Implement spec, follow repo conventions
         D->>D: Apply clean-code-criteria (12 criteria)
+        D->>D: Apply security-criteria (12 criteria)
         D->>D: Run project checks (tests, linters, build)
         D-->>A: Report completion with diff
-        A->>R: Send change for review
-        R->>R: Evaluate 7 steps: anchor, correctness, security, simplicity, clean-code, tests, docs
+        A->>R: Send change for code review
+        R->>R: Evaluate 8 steps: anchor, correctness, security sanity, security-ref, simplicity, clean-code, tests, docs
         alt change requests
             R-->>A: Change requests with severity (CRITICAL / WARNING / SUGGESTION)
             A->>D: Send feedback
         else approved
             R-->>A: Approval
+        end
+        alt code-reviewer approved
+            A->>S: Send change for security review
+            S->>S: Evaluate 12 security criteria
+            alt change requests
+                S-->>A: Security change requests with severity
+                A->>D: Send feedback
+            else approved
+                S-->>A: Security approval
+            end
         end
     end
 
@@ -140,6 +160,7 @@ sequenceDiagram
 | [@architect](opencode/agents/architect.md) | primary | Orchestrator: drives the full loop, creates specs, delegates, evaluates reviews, archives. Never writes code. Only agent that can close a spec. | Always (first contact) |
 | [@developer](opencode/agents/developer.md) | subagent | Implements the spec, runs checks, writes documentation when visible. Applies clean-code-criteria. | After user approval |
 | [@code-reviewer](opencode/agents/code-reviewer.md) | subagent | Reviews against the OpenSpec change: correctness, security, simplicity, clean-code (12 criteria), tests, docs accuracy. Tags with CRITICAL/WARNING/SUGGESTION. | After developer reports completion |
+| [@security-reviewer](opencode/agents/security-reviewer.md) | subagent | Evaluates code against 12 objective security criteria. Tags findings CRITICAL/WARNING/SUGGESTION. Mandatory gate before `@verifier`. | After code-reviewer approves |
 | [@verifier](opencode/agents/verifier.md) | subagent | Independent verification: executes project commands, maps spec scenarios to observable evidence. No-write policy. | After reviewer approves, before archive |
 | [@repo-scout](opencode/agents/repo-scout.md) | subagent | Read-only repository scan: stack, conventions, lint/test commands, structural hotspots. | First run or on repo change |
 | [@diff-summarizer](opencode/agents/diff-summarizer.md) | subagent | Terse diff summary with risk hotspots. | On-demand for large diffs |
@@ -151,7 +172,8 @@ sequenceDiagram
 | **Preflight** | Session start | OpenSpec CLI >= 1.14.0, skills loadable, context7 reachable |
 | **Result Contract** | Before delegating to developer | Design has `status`, `executive_summary`, `artifacts`, `risks`, `next_recommended` |
 | **Approval** | Before implementation | User explicitly approves via menu (never magic words) |
-| **Pre-review** | Before sending to code-reviewer | Developer checks passed, diff exists, tasks complete |
+| **Pre-review** | Before sending to reviewers | Developer checks passed, diff exists, tasks complete |
+| **Security** | After code-reviewer, before verifier | @security-reviewer approved, no CRITICAL findings |
 | **Validation** | Before archiving | `openspec validate --strict` passes, tests pass, diff in scope, `## Purpose` complete, docs entry exists |
 
 ### Clean Code Criteria (12)
@@ -176,7 +198,7 @@ Evaluated by `@code-reviewer`, applied by `@developer`:
 ### Loop Order
 
 ```
-@developer → @code-reviewer → @verifier → @architect archives
+@developer → @code-reviewer → @security-reviewer → @verifier → @architect archives
 ```
 
 ## How to Use

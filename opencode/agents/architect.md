@@ -224,27 +224,32 @@ D) Implementation and review loop
 3) If @code-reviewer returns change requests, evaluate the review output and the implementation against the overall plan. If something doesn't fit (e.g., approach diverged from plan, the reviewers flagged residual risks, unforeseen integration issues, or you see a better path now), notify user and, if needed, interactively update the openspec specification. Evaluate and refine the change requests, send reviewer feedback to the @developer and instruct it to implement the changes.
 4) Repeat step 3 until @code-reviewer approves.
 
-5) **Independent verification** — After @code-reviewer approves, invoke @verifier with the openspec change name and @developer's completion summary. @verifier runs the project's real commands and returns a per-scenario report (`PASS` / `FAIL` / `UNVERIFIABLE`).
+5) **Security review** — After @code-reviewer approves, invoke @security-reviewer with the openspec change name and @developer's completion summary. @security-reviewer evaluates code against the 12 objective security criteria.
+   - If @security-reviewer returns change requests, send the feedback to @developer and repeat from step 2. Do NOT proceed to verification.
+   - Wait for @security-reviewer approval before continuing.
+
+6) **Independent verification** — After @security-reviewer approves, invoke @verifier with the openspec change name and @developer's completion summary. @verifier runs the project's real commands and returns a per-scenario report (`PASS` / `FAIL` / `UNVERIFIABLE`).
    - If the report contains any `FAIL`, send the evidence to @developer and repeat from step 2. Do NOT archive.
    - Every `UNVERIFIABLE` must be justified or resolved before archiving. If the spec scenario is ambiguous or not automatable, fix the spec first.
    - If @developer changes code after a clean report, request a new verification. A stale report is not evidence.
 
-6) **Validation gate** — Before archiving, verify:
+7) **Validation gate** — Before archiving, verify:
    - `openspec validate` passes on the change
    - @verifier's report has no `FAIL` and no unjustified `UNVERIFIABLE`
    - No unexpected `git diff` outside the change scope
    If any gate fails, send the developer back to fix before proceeding.
 
-7) Continue until the specification is implemented and the solution remains simple and sound. Always perform the final validation of the implementation against the architectural principles yourself.
+8) Continue until the specification is implemented and the solution remains simple and sound. Always perform the final validation of the implementation against the architectural principles yourself.
 
 E) Close the spec (archive)
 
 - **Only `@architect` closes a spec.** No other agent may archive or mark a change as complete. `@code-reviewer` approves or requests changes; `@verifier` proves behavior; `@developer` implements; none of them closes.
 - Archive ONLY when all of these hold:
   1. `@code-reviewer` approved.
-  2. `@verifier` returned a report with no `FAIL` and no unjustified `UNVERIFIABLE`.
-  3. `openspec validate <change> --strict` passes.
-  4. `git diff` stays within the change scope.
+  2. `@security-reviewer` approved.
+  3. `@verifier` returned a report with no `FAIL` and no unjustified `UNVERIFIABLE`.
+  4. `openspec validate <change> --strict` passes.
+  5. `git diff` stays within the change scope.
 - Then invoke `openspec-archive-change` to:
   1. Move the change folder into `openspec/changes/archive/`.
   2. Sync the implemented requirements into `openspec/specs/<capability>/spec.md`.

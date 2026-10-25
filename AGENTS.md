@@ -46,6 +46,27 @@ El `@code-reviewer` evalúa 12 criterios objetivos (spec `clean-code-criteria`) 
 - No basta con que el código funcione: debe ser legible, mantenible y seguir los criterios objetivos del spec.
 - DRY aplica a duplicación real, no a posibilidades futuras (YAGNI sigue vigente).
 
+## Criterios de seguridad
+
+El `@security-reviewer` evalúa 12 criterios objetivos (spec `security-criteria`) en cada revisión. Los criterios son verificables sin interpretar intención.
+
+| # | Criterio | Regla objetiva | Severidad |
+|---|---------|----------------|-----------|
+| 1 | Sin secretos hardcodeados | Prohibido: claves de proveedor cloud (`AKIA...`, `AIza...`, `00...`), API keys genéricas (`sk-...`, `Bearer ...`), contraseñas hardcodeadas (`password = '...'`, `secret = '...'`). | CRITICAL |
+| 2 | Prevención de inyección SQL | Prohibido: palabras clave SQL (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `DROP`) combinadas con concatenación (`+`, `.`, `.`) o interpolación (`${`, `%s`, `%d`). Usar binding (`?`, `:name`, `$1`) u ORM. | CRITICAL |
+| 3 | Prevención de XSS | Prohibido: `.innerHTML`, `.outerHTML`, `.insertAdjacentHTML`, `document.write` con datos controlados por usuario. Variables en templates HTML deben pasar por función de escape (`esc()`, `escape()`, `htmlEncode()`). | CRITICAL |
+| 4 | Validación de entrada | Todo endpoint que acepte entrada de usuario (params, upload, headers, body) debe tener reglas de validación explícitas (tipo, longitud, formato, rango). Uploads deben validar tipo, tamaño y nombre. | WARNING |
+| 5 | Auth en rutas protegidas | Todo POST/PUT/DELETE/PATCH y toda ruta que acceda a datos sensibles debe tener guard/auth middleware. Sin session/token → 401 o 302. | CRITICAL |
+| 6 | Sin funciones de ejecución inseguras | Prohibido: `eval(`, `assert(`, `exec(`, `system(`, `passthru(`, `shell_exec(`, `proc_open(`, `spawn(`, `execSync(` con entrada de usuario. | CRITICAL |
+| 7 | Prevención de path traversal | Operaciones de archivo con entrada de usuario deben validar: sin `..` o resueltas contra directorio base (`realpath`, `path.resolve`, `normalize`). Downloads deben whitelistear extensiones. | WARNING |
+| 8 | Manejo seguro de errores | Prohibido: `var_dump(`, `print_r(`, `debug_print_backtrace(`, `console.log(` con variables sensibles fuera de tests. Respuestas de error sin stack traces ni SQL queries. | WARNING |
+| 9 | Protección CSRF | Todo POST/PUT/DELETE/PATCH debe tener validación CSRF (token, origin/referrer, o SameSite cookie). GET no debe modificar estado. | WARNING |
+| 10 | Almacenamiento seguro de contraseñas | Passwords deben usar `password_hash`, `bcrypt.hash`, `argon2`, `scrypt`, `pbkdf2`. Prohibido: almacenamiento en texto plano, MD5/SHA1/SHA256 solo. | CRITICAL |
+| 11 | Configuración segura de sesiones | Cookies de sesión deben tener `HttpOnly = true`, `Secure = true` (producción), `SameSite = Lax` o `Strict`. | WARNING |
+| 12 | Headers de seguridad | Respuestas HTTP deben incluir mínimo `X-Content-Type-Options: nosniff` y `X-Frame-Options: DENY` o `SAMEORIGIN`. | SUGGESTION |
+
+- No basta con que el código sea seguro: debe seguir los criterios objetivos del spec.
+
 ## Documentación para humanos
 
 - `docs/` contiene la documentación para humanos, en español: `docs/CHANGELOG.md` (índice), `docs/changes/YYYY-MM-DD-<change>.md` (una entrada por change) y `docs/guides/<capability>.md` (uso por capacidad). La estructura y las fuentes están en `docs/README.md`.
@@ -64,19 +85,21 @@ Antes de archivar un cambio, @architect debe verificar estos items. Si alguno fa
 | 1 | `openspec validate` pasa | `openspec validate` (exit 0) |
 | 2 | No hay diff inesperado | `git diff` solo afecta archivos del change |
 | 3 | Reporte del `@verifier` limpio | Sin `FAIL` y sin `UNVERIFIABLE` injustificados |
-| 4 | Spec sync sin conflictos | Los deltas del change no chocan con spec main |
-| 5 | `## Purpose` completo | No queda "TBD" ni placeholder en el spec archivado |
-| 6 | Documentación del change visible | Existe `docs/changes/<fecha>-<change>.md` con las seis secciones, está enlazada en `docs/CHANGELOG.md` y `docs/guides/<capability>.md` está al día (`git diff -- docs/`) |
+| 4 | `@security-reviewer` aprobó | Sin hallazgos CRITICAL pendientes |
+| 5 | Spec sync sin conflictos | Los deltas del change no chocan con spec main |
+| 6 | `## Purpose` completo | No queda "TBD" ni placeholder en el spec archivado |
+| 7 | Documentación del change visible | Existe `docs/changes/<fecha>-<change>.md` con las seis secciones, está enlazada en `docs/CHANGELOG.md` y `docs/guides/<capability>.md` está al día (`git diff -- docs/`) |
 
 Si algun check falla, el architect envia al developer a corregir antes de reintentar el archive.
 
 ## Orden del loop
 
 ```
-@developer  →  @code-reviewer  →  @verifier  →  @architect archiva
+@developer  →  @code-reviewer  →  @security-reviewer  →  @verifier  →  @architect archiva
 ```
 
 - `@code-reviewer` aprueba o pide cambios. Su verificacion de tests es obligatoria, pero **no** sustituye al `@verifier`.
+- `@security-reviewer` evalúa los 12 criterios de seguridad. Si encuentra hallazgos CRITICAL, el cambio no puede proceder hasta que se corrijan.
 - `@verifier` ejecuta los comandos reales y devuelve un veredicto por escenario de la spec. Un `FAIL` devuelve el trabajo al `@developer`.
 - Si el `@developer` cambia codigo despues de un reporte limpio, el reporte caduca: hace falta verificacion nueva.
 - Nadie mas archiva.

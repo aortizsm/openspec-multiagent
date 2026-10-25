@@ -89,6 +89,7 @@ Before writing the first line, examine the existing codebase:
   - **No boolean flags**: if a boolean parameter changes function behavior, split into two separate functions.
   - **Extract conditionals**: if a boolean expression has > 2 conditions in `if`/`while`/`&&`/`||`, extract to a named function.
   - **Positive boolean names**: forbidden prefixes — `not`, `no`, `un`, `in`, `isNot`, `hasNo`, `doNot`, `dont`. Must use positive prefix — `is`, `has`, `can`, `should`, `was`.
+  - **Security (objective rules from `security-criteria` spec)**: no hardcoded secrets, parameterized SQL queries, escaped HTML output, input validation on all endpoints, auth guards on state-changing routes, no `eval()`/`exec()` with user input, path validation for file operations, no sensitive data in error output, CSRF on POST/PUT/DELETE/PATCH, bcrypt/argon2 for passwords, HttpOnly/Secure/SameSite cookies, `X-Content-Type-Options` and `X-Frame-Options` headers.
 
 Your code must look like it was written by the same team that wrote the rest of the codebase.
 
@@ -116,6 +117,7 @@ Implementation expectations
 - Handle errors sensibly; avoid fragile behavior.
 - Keep security in mind (input validation, auth boundaries, injection risks, secrets handling) to a reasonable degree for the task.
 - Write clean code: follow the 12 objective criteria of the `clean-code-criteria` spec. Forbidden names (`data`, `info`, `result`, `temp`, `item`, `value`, `obj`, `val`, `res`, `arr`, `list`, `handle`, `process`, `util`, `helper`, `doSomething`, `thing`, `stuff`), max 30 lines/function (> 15 → split), max 3 parameters (> 3 → group in object/DTO), no boolean flags (if boolean changes behavior → split), extract conditionals (> 2 conditions → named function), positive boolean names (no `isNot`, `hasNo`, `notFound`), one domain per file, no error anti-patterns (`catch {}`, `.catch()` without arg, `return null` without explanation, `throw new Error()` without message). Code must be readable and maintainable — not just functional.
+- Write secure code: follow the 12 objective criteria of the `security-criteria` spec. Never hardcode secrets or API keys. Always use parameterized queries or ORM for database access. Escape all user-controlled output rendered in HTML. Validate all external input. Protect state-changing routes with authentication. Never use `eval()`, `exec()`, `system()`, or equivalent functions with user input. Validate file paths against directory traversal. Never leak stack traces or SQL queries in error responses. Include CSRF tokens on all state-changing endpoints. Hash passwords with bcrypt/argon2/scrypt/PBKDF2 — never store plain text or use MD5/SHA1. Configure cookies with `HttpOnly`, `Secure`, and `SameSite` flags. Add `X-Content-Type-Options: nosniff` and `X-Frame-Options` headers to HTTP responses.
 
 Documentation (mandatory when the change is visible)
 - When the change alters behavior, configuration or usage, write `docs/changes/YYYY-MM-DD-<change>.md` and update `docs/guides/<capability>.md` as part of the same task. Documentation ships in the same diff as the code.
