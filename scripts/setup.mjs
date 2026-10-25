@@ -44,6 +44,7 @@ Options:
   --context7 <remote|local>   How to wire Context7 (default: remote)
   --no-agents           Skip copying the agent definitions
   --no-engram           Skip offering to install Engram
+  --no-codegraph        Skip offering to install CodeGraph
   --no-mcp              Skip offering to configure MCP servers
   --no-context7         Skip configuring Context7
   --dry-run             Report what is missing without installing anything
@@ -54,6 +55,7 @@ Options:
 const GLOBAL = flags.has("global");
 const INSTALL_AGENTS = !flags.has("no-agents");
 const INSTALL_ENGRAM = !flags.has("no-engram");
+const INSTALL_CODEGRAPH = !flags.has("no-codegraph");
 const CONFIGURE_MCP = !flags.has("no-mcp");
 const CONFIGURE_CONTEXT7 = !flags.has("no-context7");
 const DRY_RUN = flags.has("dry-run");
@@ -189,6 +191,47 @@ if (DRY_RUN) {
     if (result.status !== 0) {
       console.error("WARNING: could not install Engram automatically.");
       console.error("         You can install it by hand and re-run: node scripts/install-engram.mjs");
+    }
+  }
+}
+
+// --- 5.5. CodeGraph (optional, semantic code graph) -----------------------------
+step('Installing CodeGraph (optional, semantic code graph)');
+if (DRY_RUN) {
+  info('[dry-run] would offer to install CodeGraph');
+} else if (!INSTALL_CODEGRAPH) {
+  info('skipped (--no-codegraph)');
+} else if (!INSTALL_ENGRAM) {
+  info('skipped (--no-engram implied, skipping optional tools)');
+} else {
+  const wantsCodegraph = await askYesNo('¿Instalar CodeGraph (grafo semántico del codebase)?', {
+    defaultYes: false,
+  });
+  if (!wantsCodegraph) {
+    info('skipped');
+  } else {
+    if (!npm) {
+      console.error('WARNING: npm is required to install CodeGraph.');
+      console.error('         You can install it later: npm i -g @colbymchenry/codegraph');
+    } else {
+      info('npm install (resolves @colbymchenry/codegraph)');
+      if (!npmInstall(['install'])) {
+        console.error('WARNING: npm install failed, CodeGraph CLI may not be available.');
+      }
+      const codegraphOk = which('codegraph');
+      if (!codegraphOk) {
+        console.error('WARNING: codegraph CLI not found on PATH. Add it and re-run.');
+      } else {
+        const result = spawnSync(
+          codegraphOk,
+          ['install', '--target=opencode', '--location=global', '--yes'],
+          { stdio: 'inherit', shell: false },
+        );
+        if (result.status !== 0) {
+          console.error('WARNING: could not wire CodeGraph to OpenCode automatically.');
+          console.error('         Run manually: codegraph install --target=opencode --location=global --yes');
+        }
+      }
     }
   }
 }
