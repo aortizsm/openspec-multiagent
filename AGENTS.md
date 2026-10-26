@@ -106,6 +106,8 @@ Si el cambio incluye UI/UX, se inserta `@ux-designer` antes de `@developer`:
 
 `@ux-designer` genera wireframes (ASCII), especifica tokens de diseño y revisa requisitos de UX en el spec. Solo actúa cuando el cambio incluye UI.
 
+Si el cambio requiere tests adicionales, `@architect` puede invocar a `@test-engineer` en cualquier momento para escribir tests unitarios e integración desde los scenarios del spec.
+
 - `@code-reviewer` aprueba o pide cambios. Su verificacion de tests es obligatoria, pero **no** sustituye al `@verifier`.
 - `@security-reviewer` evalúa los 12 criterios de seguridad. Si encuentra hallazgos CRITICAL, el cambio no puede proceder hasta que se corrijan.
 - `@verifier` ejecuta los comandos reales y devuelve un veredicto por escenario de la spec. Un `FAIL` devuelve el trabajo al `@developer`.

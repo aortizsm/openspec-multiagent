@@ -35,6 +35,9 @@ flowchart TD
     Architect -->|"Implement"| Developer["@developer<br/>Writes code"]
     Developer -->|"Done"| Architect
 
+    Architect -->|"Write tests"| TestEng["@test-engineer<br/>Unit + integration tests"]
+    TestEng -->|"Done"| Architect
+
     Architect -->|"Code review"| CodeRev["@code-reviewer<br/>Clean code + tests"]
     CodeRev -.->|Fix needed| Developer
     CodeRev -->|"Approved"| SecRev["@security-reviewer<br/>12 security criteria"]
@@ -57,6 +60,7 @@ flowchart TD
 | **@verifier** | Independent verification: runs tests, maps spec scenarios to evidence. |
 | **@repo-scout** | Read-only scan: stack, conventions, lint/test commands. |
 | **@ux-designer** | UX: generates wireframes (ASCII), specifies design tokens, reviews UX in specs. Inserted before @developer for UI changes. |
+| **@test-engineer** | Writes unit and integration tests from OpenSpec scenarios. Covers edge cases, mocks, fixtures. |
 
 A multi-agent orchestrated development workflow that uses [OpenSpec](https://openspec.dev) as the source of truth for product and architecture requirements. Agents collaborate in a structured loop — from specification through implementation to review — keeping every change grounded in a written spec before the implementation starts.
 
@@ -195,6 +199,7 @@ sequenceDiagram
     participant V as @verifier<br/>(subagent, verifies)
     participant S2 as @repo-scout<br/>(subagent, scans)
     participant U as @ux-designer<br/>(subagent, UX design)
+    participant T as @test-engineer<br/>(subagent, writes tests)
     participant X as @diff-summarizer<br/>(subagent, summarizes)
 
     Note over U,A: Phase 1 - Specification
@@ -288,6 +293,7 @@ sequenceDiagram
 | [@code-reviewer](opencode/agents/code-reviewer.md) | subagent | Reviews against the OpenSpec change: correctness, security, simplicity, clean-code (12 criteria), tests, docs accuracy. Tags with CRITICAL/WARNING/SUGGESTION. | After developer reports completion |
 | [@security-reviewer](opencode/agents/security-reviewer.md) | subagent | Evaluates code against 12 objective security criteria. Tags findings CRITICAL/WARNING/SUGGESTION. Mandatory gate before `@verifier`. | After code-reviewer approves |
 | [@verifier](opencode/agents/verifier.md) | subagent | Independent verification: executes project commands, maps spec scenarios to observable evidence. No-write policy. | After reviewer approves, before archive |
+| [@test-engineer](opencode/agents/test-engineer.md) | subagent | Writes unit and integration tests from OpenSpec scenarios. Covers edge cases, mocks, fixtures. | On-demand (test coverage) |
 | [@ux-designer](opencode/agents/ux-designer.md) | subagent | UX: generates ASCII wireframes, specifies design tokens, reviews UX in specs. Inserted before @developer for UI changes. | Before implementation (UI changes) |
 | [@repo-scout](opencode/agents/repo-scout.md) | subagent | Read-only repository scan: stack, conventions, lint/test commands, structural hotspots. | First run or on repo change |
 | [@diff-summarizer](opencode/agents/diff-summarizer.md) | subagent | Terse diff summary with risk hotspots. | On-demand for large diffs |
