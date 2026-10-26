@@ -403,7 +403,20 @@ npm run check            # = node scripts/check.mjs (preflight only)
 npm run install-agents   # copy agents without touching OpenSpec
 npm run install-context7 # configure only Context7
 npm run install-engram   # write/install the Engram MCP entry
+npm run reinstall        # reinstall agents + MCPs (overwrites existing)
+npm run reset            # remove ALL multi-agent setup (destructive, requires --confirm)
 ```
+
+### Reinstall and Reset
+
+Need to refresh the setup? Two commands:
+
+```bash
+npm run reinstall    # Reinstall agents + MCPs (overwrites existing)
+npm run reset        # Remove ALL multi-agent setup (destructive, requires --confirm)
+```
+
+`reinstall` is safe to run anytime. `reset` removes everything and requires `--confirm` to execute.
 
 ### Context7 credentials (optional)
 

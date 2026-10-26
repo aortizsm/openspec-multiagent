@@ -23,6 +23,8 @@
     "install-context7": "node scripts/install-context7.mjs",
     "install-engram": "node scripts/install-engram.mjs",
     "install-codegraph": "codegraph install --target=opencode --location=global --yes && codegraph init --yes",
+    "reinstall": "node scripts/reinstall.mjs",
+    "reset": "node scripts/reset.mjs",
     "test": "node tests/run.mjs"
   },
   "dependencies": {

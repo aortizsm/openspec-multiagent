@@ -1,0 +1,8 @@
+- [x] Add --force flag to install-agents.mjs (overwrites existing files)
+- [x] Create scripts/reinstall.mjs — reinstalls agents + reconfigures MCPs
+- [x] Create scripts/reset.mjs — removes agents, MCPs, OpenSpec setup
+- [x] Add npm scripts to package.json: reinstall, reset
+- [x] Update README.md with new commands section
+- [x] Run tests: npm test (24 passed)
+- [x] Verify: node scripts/reinstall.mjs --dry-run
+- [x] Verify: node scripts/reset.mjs --dry-run

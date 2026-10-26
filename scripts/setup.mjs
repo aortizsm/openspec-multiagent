@@ -26,11 +26,19 @@ import {
   MIN_OPENSPEC,
   REPO_DIR,
   SCRIPT_DIR,
+  ZEN_EMBEDDED_PRICING,
   askText,
   commandVersion,
+  configCandidates,
+  configureZenProvider,
+  fetchZenData,
   formatVersion,
+  getZenModelDisplay,
   hasMcpEntry,
   parseArgs,
+  parseZenEndpointTable,
+  readJsonc,
+  selectModelFromList,
   writeMcpEntry,
   which,
 } from "./lib.mjs";
@@ -60,7 +68,7 @@ if (context7Mode !== "remote" && context7Mode !== "local") {
 const npm = which(process.platform === "win32" ? "npm.cmd" : "npm");
 
 // --- Helpers -------------------------------------------------------------------
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 10;
 let currentStep = 0;
 
 function step(msg) {
@@ -117,6 +125,7 @@ if (!checks.npm) {
 }
 
 // --- 1. GITHUB_TOKEN (ask upfront) ---------------------------------------------
+(async () => {
 if (DRY_RUN) {
   info("[dry-run] would ask for GITHUB_TOKEN");
 } else {
@@ -200,7 +209,23 @@ if (DRY_RUN) {
     ok("Agent definitions installed");
   }
 
-  // --- 6. CodeGraph ------------------------------------------------------------
+  // --- 6. Model selection (OpenCode Go) -----------------------------------------
+  step("Selecting models for OpenCode Go");
+  if (DRY_RUN) {
+    info("[dry-run] would show model selector");
+  } else {
+    const selectedModels = await runModelSelection();
+    if (selectedModels.length > 0) {
+      try {
+        await configureZenProvider(selectedModels.map((s) => s.model));
+        ok("opencode-go provider configured");
+      } catch (err) {
+        console.error(`WARNING: could not configure opencode-go provider: ${err.message}`);
+      }
+    }
+  }
+
+  // --- 7. CodeGraph ------------------------------------------------------------
   step("Installing CodeGraph");
   if (DRY_RUN) {
     info("[dry-run] would install CodeGraph");
@@ -235,7 +260,7 @@ if (DRY_RUN) {
     }
   }
 
-  // --- 7. Engram ---------------------------------------------------------------
+  // --- 8. Engram ---------------------------------------------------------------
   step("Installing Engram");
   if (DRY_RUN) {
     info("[dry-run] would install Engram");
@@ -255,7 +280,7 @@ if (DRY_RUN) {
     ok("Engram installed");
   }
 
-  // --- 8. MCP servers ----------------------------------------------------------
+  // --- 9. MCP servers ----------------------------------------------------------
   step("Configuring MCP servers");
   const mcpServers = [
     {
@@ -290,7 +315,7 @@ if (DRY_RUN) {
     }
   }
 
-  // --- 9. Preflight ------------------------------------------------------------
+  // --- 10. Preflight ------------------------------------------------------------
   step("Running preflight check");
   const checkScript = join(SCRIPT_DIR, "check.mjs");
   if (existsSync(checkScript)) {
@@ -304,6 +329,75 @@ if (DRY_RUN) {
   } else {
     info("check.mjs not found; skipping");
   }
+}
+})();
+
+async function runModelSelection() {
+  const { pricing: pricingEntries, html } = await fetchZenData();
+  const endpointTable = html ? parseZenEndpointTable(html) : {};
+
+  let pricing = pricingEntries;
+  if (!pricing) {
+    info("Warning: could not fetch model list; using embedded list");
+    pricing = ZEN_EMBEDDED_PRICING;
+  }
+
+  const displayModels = getZenModelDisplay(pricing, endpointTable);
+  const pricedModels = displayModels.filter((m) => m.hasPricing);
+
+  if (pricedModels.length === 0) {
+    info("No priced models available; skipping model selection");
+    return [];
+  }
+
+  const agentsWithModels = discoverAgentsWithModel();
+  const selected = [];
+
+  if (agentsWithModels.length > 0) {
+    const agentsSelection = await selectModelsForAgents(displayModels, agentsWithModels);
+    selected.push(...agentsSelection);
+  } else {
+    info("No pre-configured agents found — picking a model for the provider");
+    await selectProviderModel(displayModels, selected);
+  }
+
+  return selected;
+}
+
+function discoverAgentsWithModel() {
+  const configPath = configCandidates().find(existsSync);
+  const userConfig = configPath ? readJsonc(configPath).data : null;
+  const agentConfigs = userConfig?.agent ?? {};
+  return Object.entries(agentConfigs)
+    .filter(([, cfg]) => cfg.model)
+    .map(([name]) => name);
+}
+
+async function selectModelForAgent(displayModels, recommendedId) {
+  const selectedId = await selectModelFromList(displayModels, recommendedId, recommendedId);
+  const selectedModel = displayModels.find((m) => m.modelId === selectedId);
+  return { agent: null, modelId: selectedId, model: selectedModel };
+}
+
+async function selectModelsForAgents(displayModels, agents) {
+  const selected = [];
+  for (const agentName of agents) {
+    const isArchitect = agentName === "architect";
+    const recommendedId = isArchitect ? "gpt-6-luna" : "mimo-v2.6-flash";
+    const entry = await selectModelForAgent(displayModels, recommendedId);
+    entry.agent = agentName;
+    selected.push(entry);
+    info(`  ${agentName}: ${entry.modelId}`);
+  }
+  return selected;
+}
+
+async function selectProviderModel(displayModels, selected) {
+  const recommendedId = "mimo-v2.6-flash";
+  const entry = await selectModelForAgent(displayModels, recommendedId);
+  entry.agent = "opencode-go";
+  selected.push(entry);
+  info(`  opencode-go: ${entry.modelId}`);
 }
 
 console.log("");

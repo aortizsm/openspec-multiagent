@@ -5,6 +5,7 @@
 //   node scripts/install-agents.mjs             # user-level agents dir
 //   node scripts/install-agents.mjs --project   # ./.opencode/agents in the cwd
 //   node scripts/install-agents.mjs --dry-run   # show what would be copied
+//   node scripts/install-agents.mjs --force     # overwrite existing agent files
 //
 // The target directory follows OpenCode conventions:
 //   $XDG_CONFIG_HOME/opencode/agents  (when XDG_CONFIG_HOME is set)
@@ -23,6 +24,7 @@ if (flags.has("help")) {
 Options:
   --project   Install into ./.opencode/agents instead of the user-level directory
   --dry-run   Show what would be copied without writing anything
+  --force     Overwrite existing agent files (default: skip if file exists)
   --help      Show this help`);
   process.exit(0);
 }
@@ -50,9 +52,24 @@ if (flags.has("dry-run")) {
 }
 
 mkdirSync(target, { recursive: true });
+
+const force = flags.has("force");
+let installed = 0;
+let skipped = 0;
+
 for (const f of files) {
-  copyFileSync(join(AGENTS_SRC_DIR, f), join(target, f));
+  const dest = join(target, f);
+  if (existsSync(dest) && !force) {
+    skipped += 1;
+    continue;
+  }
+  copyFileSync(join(AGENTS_SRC_DIR, f), dest);
+  installed += 1;
 }
 
+const summary = [];
+if (installed > 0) summary.push(`${installed} installed`);
+if (skipped > 0) summary.push(`${skipped} skipped (use --force to overwrite)`);
 console.log(`Installed ${files.length} agent definitions to ${target}`);
+if (summary.length > 0) console.log(summary.join(", ") + ".");
 console.log("Restart OpenCode (or start a new session) to pick them up.");
