@@ -29,7 +29,7 @@ flowchart TD
     User -->|"Approve / Revise"| Architect
 
     Architect -->|"UX review"| UXDes["@ux-designer<br/>Wireframes + tokens"]
-    UXDes --|"Fix needed"| Spec
+    UXDes -.->|Fix needed| Spec
     UXDes -->|"Approved"| Architect
 
     Architect -->|"Implement"| Developer["@developer<br/>Writes code"]
@@ -62,11 +62,11 @@ flowchart TD
 
 A multi-agent orchestrated development workflow that uses [OpenSpec](https://openspec.dev) as the source of truth for product and architecture requirements. Agents collaborate in a structured loop — from specification through implementation to review — keeping every change grounded in a written spec before the implementation starts.
 
-<details>
-<summary><strong>🇨🇱 Versión en Español</strong> — click para expandir</summary>
-
 <!-- SPANISH -->
 <a id="spanish"></a>
+
+<details>
+<summary><strong>🇨🇱 Versión en Español</strong> — click para expandir</summary>
 
 ## How it works
 
