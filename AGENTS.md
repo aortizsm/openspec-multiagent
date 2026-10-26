@@ -95,18 +95,18 @@ Si algun check falla, el architect envia al developer a corregir antes de reinte
 ## Orden del loop
 
 ```
-@developer  →  @code-reviewer  →  @security-reviewer  →  @verifier  →  @architect archiva
+@developer  →  @test-engineer  →  @code-reviewer  →  @security-reviewer  →  @verifier  →  @architect archiva
 ```
 
 Si el cambio incluye UI/UX, se inserta `@ux-designer` antes de `@developer`:
 
 ```
-@ux-designer  →  @developer  →  @code-reviewer  →  @security-reviewer  →  @verifier  →  @architect archiva
+@ux-designer  →  @developer  →  @test-engineer  →  @code-reviewer  →  @security-reviewer  →  @verifier  →  @architect archiva
 ```
 
 `@ux-designer` genera wireframes (ASCII), especifica tokens de diseño y revisa requisitos de UX en el spec. Solo actúa cuando el cambio incluye UI.
 
-Si el cambio requiere tests adicionales, `@architect` puede invocar a `@test-engineer` en cualquier momento para escribir tests unitarios e integración desde los scenarios del spec.
+`@test-engineer` es **automático**: siempre corre después de `@developer` para escribir tests unitarios e integración desde los scenarios del spec. Complementa los tests de `@developer` cubriendo edge cases y scenarios que el developer podría haber pasado por alto.
 
 - `@code-reviewer` aprueba o pide cambios. Su verificacion de tests es obligatoria, pero **no** sustituye al `@verifier`.
 - `@security-reviewer` evalúa los 12 criterios de seguridad. Si encuentra hallazgos CRITICAL, el cambio no puede proceder hasta que se corrijan.

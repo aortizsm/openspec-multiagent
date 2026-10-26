@@ -35,12 +35,10 @@ flowchart TD
     Architect -->|"Implement"| Developer["@developer<br/>Writes code"]
     Developer -->|"Done"| Architect
 
-    Architect -->|"Write tests"| TestEng["@test-engineer<br/>Unit + integration tests"]
-    TestEng -->|"Done"| Architect
-
     Architect -->|"Code review"| CodeRev["@code-reviewer<br/>Clean code + tests"]
     CodeRev -.->|Fix needed| Developer
-    CodeRev -->|"Approved"| SecRev["@security-reviewer<br/>12 security criteria"]
+    CodeRev -->|"Approved"| TestEng["@test-engineer<br/>Unit + integration tests"]
+    TestEng -->|"Approved"| SecRev["@security-reviewer<br/>12 security criteria"]
 
     SecRev -.->|Fix needed| Developer
     SecRev -->|"Approved"| Verifier["@verifier<br/>Independent verify"]
@@ -98,6 +96,12 @@ User describes change -> @architect builds OpenSpec spec -> User approves
                                         @architect             @developer fixes
                                         archives spec          loop restarts
 ```
+
+**Delegación a subagentes:**
+
+El `@architect` delega tareas a subagentes usando skills de OpenSpec (por ej., `openspec-apply-change`, `openspec-verify-change`). Cada subagente opera en una **sesión independiente** sin historial de conversación — empieza desde cero. El `@architect` debe pasar todo el contexto necesario explícitamente: los artefactos del change de OpenSpec (proposal, design, tasks, specs), las convenciones de `AGENTS.md` del proyecto, y cualquier feedback de revisión.
+
+Los subagentes pueden pedir correcciones al `@architect`, quien las reenvía al `@developer` para que las arregle. Este modelo de delegación asegura que cada agente trabaje con un brief completo y autocontenido — sin suposiciones, sin memoria compartida, sin vacíos.
 
 **En 6 pasos:**
 
@@ -331,8 +335,14 @@ Evaluated by `@code-reviewer`, applied by `@developer`:
 ### Loop Order
 
 ```
-@developer → @code-reviewer → @security-reviewer → @verifier → @architect archives
+@developer → @test-engineer → @code-reviewer → @security-reviewer → @verifier → @architect archives
 ```
+
+### Subagent Delegation
+
+The `@architect` delegates tasks to subagents using OpenSpec skills (e.g., `openspec-apply-change`, `openspec-verify-change`). Each subagent operates in an **independent session** with no conversation history — it starts from a clean slate. The `@architect` must pass all necessary context explicitly: the OpenSpec change artifacts (proposal, design, tasks, specs), the project's `AGENTS.md` conventions, and any review feedback.
+
+Subagents can request changes back to the `@architect`, who relays them to the `@developer` for fixes. This delegation model ensures that every agent works with a complete, self-contained brief — no assumptions, no shared memory, no gaps.
 
 ## How to Use
 

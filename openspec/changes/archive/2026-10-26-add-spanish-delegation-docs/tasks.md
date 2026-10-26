@@ -1,0 +1,6 @@
+- [x] Read current README.md to understand structure
+- [x] Update English "Loop Order" section to include @test-engineer
+- [x] Add "Subagent Delegation" section to English README (after Loop Order)
+- [x] Add "Delegación a subagentes" section to Spanish README (after "En 6 pasos")
+- [x] Verify README renders correctly (no broken markdown)
+- [x] Run tests: `npm test`
