@@ -98,6 +98,14 @@ Si algun check falla, el architect envia al developer a corregir antes de reinte
 @developer  →  @code-reviewer  →  @security-reviewer  →  @verifier  →  @architect archiva
 ```
 
+Si el cambio incluye UI/UX, se inserta `@ux-designer` antes de `@developer`:
+
+```
+@ux-designer  →  @developer  →  @code-reviewer  →  @security-reviewer  →  @verifier  →  @architect archiva
+```
+
+`@ux-designer` genera wireframes (ASCII), especifica tokens de diseño y revisa requisitos de UX en el spec. Solo actúa cuando el cambio incluye UI.
+
 - `@code-reviewer` aprueba o pide cambios. Su verificacion de tests es obligatoria, pero **no** sustituye al `@verifier`.
 - `@security-reviewer` evalúa los 12 criterios de seguridad. Si encuentra hallazgos CRITICAL, el cambio no puede proceder hasta que se corrijan.
 - `@verifier` ejecuta los comandos reales y devuelve un veredicto por escenario de la spec. Un `FAIL` devuelve el trabajo al `@developer`.
