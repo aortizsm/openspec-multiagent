@@ -5,6 +5,8 @@ Every change starts from a written specification, is implemented by a dedicated 
 and passes independent code, security, and verification review before being archived.
 No code is written until the spec is approved.
 
+![OpenCode OpenSpec Multi-Agent Logo](logo.svg)
+
 ![Node.js](https://img.shields.io/badge/node-%3E=20.19.0-green)
 ![OpenSpec CLI](https://img.shields.io/badge/openspec-%3E=1.14.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
