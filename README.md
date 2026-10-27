@@ -4,15 +4,7 @@ A multi-agent orchestrated development workflow built on [OpenSpec](https://open
 Every change starts from a written specification, is implemented by a dedicated agent,
 and passes independent code, security, and verification review before being archived.
 No code is written until the spec is approved.
-
-<div align="center">
-![OpenCode OpenSpec Multi-Agent Logo](logo.svg)
-</div>
-
-![Node.js](https://img.shields.io/badge/node-%3E=20.19.0-green)
-![OpenSpec CLI](https://img.shields.io/badge/openspec-%3E=1.14.0-blue)
-![License](https://img.shields.io/badge/license-MIT-brightgreen)
-![Tests](https://img.shields.io/badge/tests-passing-success)
+![Node.js](https://img.shields.io/badge/node-%3E=20.19.0-green) ![OpenSpec CLI](https://img.shields.io/badge/openspec-%3E=1.14.0-blue) ![License](https://img.shields.io/badge/license-MIT-brightgreen) ![Tests](https://img.shields.io/badge/tests-passing-success)
 
 ## Features
 
