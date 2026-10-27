@@ -346,14 +346,14 @@ function stdoutStream({ tty = false } = {}) {
   // ------------------------------------------------------------------
   // contextBundle
   // ------------------------------------------------------------------
-  await testAsync("contextBundle returns a Markdown bundle string for auto-rollback", async () => {
-    const bundle = await contextBundle("auto-rollback");
+  await testAsync("contextBundle returns a Markdown bundle string for orchestrate-refactor", async () => {
+    const bundle = await contextBundle("orchestrate-refactor");
     assert.strictEqual(typeof bundle, "string");
     assert.ok(bundle.length > 0, "bundle is empty");
   });
 
-  await testAsync("contextBundle contains all five sections for auto-rollback", async () => {
-    const bundle = await contextBundle("auto-rollback");
+  await testAsync("contextBundle contains all five sections for orchestrate-refactor", async () => {
+    const bundle = await contextBundle("orchestrate-refactor");
     for (const section of [
       "## Proposal",
       "## Design",
@@ -365,13 +365,13 @@ function stdoutStream({ tty = false } = {}) {
     }
   });
 
-  await testAsync("contextBundle contains proposal.md content (# Proposal) for auto-rollback", async () => {
-    const bundle = await contextBundle("auto-rollback");
+  await testAsync("contextBundle contains proposal.md content (# Proposal) for orchestrate-refactor", async () => {
+    const bundle = await contextBundle("orchestrate-refactor");
     assert.ok(bundle.includes("# Proposal"), "bundle missing proposal heading");
   });
 
-  await testAsync("contextBundle contains design.md content (# Design) for auto-rollback", async () => {
-    const bundle = await contextBundle("auto-rollback");
+  await testAsync("contextBundle contains design.md content (# Design) for orchestrate-refactor", async () => {
+    const bundle = await contextBundle("orchestrate-refactor");
     assert.ok(bundle.includes("# Design"), "bundle missing design heading");
   });
 

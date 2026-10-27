@@ -58,6 +58,16 @@ function parseArgs() {
   return { changeName, fromAgent, dryRun };
 }
 
+function validateChangeName(changeName) {
+  const validNamePattern = /^[a-z0-9_-]+$/;
+
+  if (!validNamePattern.test(changeName)) {
+    throw new Error(
+      `Invalid change name "${changeName}". Only [a-z0-9_-] characters are allowed`
+    );
+  }
+}
+
 function runCommand(command, args, options = {}) {
   const env = {
     ...process.env,
@@ -69,7 +79,6 @@ function runCommand(command, args, options = {}) {
     cwd: PROJECT_ROOT,
     env,
     stdio: 'inherit',
-    shell: true,
     ...options
   });
 
@@ -117,7 +126,9 @@ function runOpenspecArchive(changeName) {
 
 function main() {
   const { changeName, fromAgent, dryRun } = parseArgs();
-  
+
+  validateChangeName(changeName);
+
   let startIndex = 0;
   if (fromAgent) {
     startIndex = AGENTS.indexOf(fromAgent);
@@ -126,17 +137,7 @@ function main() {
   const agentsToRun = AGENTS.slice(startIndex);
 
   if (dryRun) {
-    console.log(`\n📋 Execution plan for change "${changeName}":`);
-    console.log(`Starting from: ${fromAgent || AGENTS[0]}`);
-    console.log('\nAgents to run:');
-    agentsToRun.forEach((agent, i) => {
-      console.log(`  ${startIndex + i + 1}. ${agent}`);
-    });
-    const validateStep = AGENTS.length + 1;
-    const archiveStep = AGENTS.length + 2;
-    console.log(`  ${validateStep}. openspec validate ${changeName}`);
-    console.log(`  ${archiveStep}. openspec archive ${changeName} --yes`);
-    console.log('\nDry run complete. Run without --dry-run to execute.');
+    runDryRun(changeName, fromAgent, startIndex);
     return;
   }
 
@@ -145,16 +146,39 @@ function main() {
     console.log(`Resuming from: ${fromAgent}`);
   }
 
+  runAgents(agentsToRun, changeName);
+  runPostSteps(changeName);
+}
+
+function runDryRun(changeName, fromAgent, startIndex) {
+  const agentsToRun = AGENTS.slice(startIndex);
+
+  console.log(`\n📋 Execution plan for change "${changeName}":`);
+  console.log(`Starting from: ${fromAgent || AGENTS[0]}`);
+  console.log('\nAgents to run:');
+  agentsToRun.forEach((agent, i) => {
+    console.log(`  ${startIndex + i + 1}. ${agent}`);
+  });
+  const validateStep = AGENTS.length + 1;
+  const archiveStep = AGENTS.length + 2;
+  console.log(`  ${validateStep}. openspec validate ${changeName}`);
+  console.log(`  ${archiveStep}. openspec archive ${changeName} --yes`);
+  console.log('\nDry run complete. Run without --dry-run to execute.');
+}
+
+function runAgents(agentsToRun, changeName) {
   for (const agent of agentsToRun) {
     try {
       saveCheckpoint(agent);
       runAgent(agent, changeName);
-    } catch {
+    } catch (error) {
       rollbackToCheckpoint();
       process.exit(1);
     }
   }
+}
 
+function runPostSteps(changeName) {
   runOpenspecValidate(changeName);
   runOpenspecArchive(changeName);
 
