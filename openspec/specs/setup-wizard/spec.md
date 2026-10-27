@@ -1,46 +1,24 @@
 # setup-wizard Specification
 
 ## Purpose
-Adds a model selection step to the OpenCode setup wizard that lets users pick OpenCode Go models for each agent using an interactive arrow-key selector with official pricing data.
+Ensures the OpenCode setup wizard's input prompts (GITHUB_TOKEN, model selection) do not hang in non-TTY, piped, or post-restart environments.
 
 ## Requirements
 
-### Requirement: Setup wizard includes model selection step
-The setup wizard SHALL include a step "Selecting models for OpenCode Go" that runs after agent definitions are installed and before CodeGraph installation.
+### Requirement: Setup wizard GITHUB_TOKEN prompt does not hang
+The setup wizard's `askText` call for GITHUB_TOKEN SHALL return the fallback value immediately when stdin is unavailable, instead of blocking forever.
 
-#### Scenario: Model selection step executes
-- **WHEN** setup runs in non-dry-run mode
-- **THEN** Step 6 "Selecting models for OpenCode Go" is executed
+#### Scenario: Non-interactive environment
+- **WHEN** setup runs in a non-TTY environment with no piped input
+- **THEN** `askText` returns the fallback (empty string) and the wizard proceeds to error handling rather than hanging
 
-#### Scenario: Dry-run reports model selection
-- **WHEN** setup runs with `--dry-run`
-- **THEN** step prints "[dry-run] would show model selector" and continues
+#### Scenario: Post-restart session
+- **WHEN** setup runs after an OpenCode server restart where stdin state is uncertain
+- **THEN** `askText` detects the stdin state and either reads available input or falls back without hanging
 
-### Requirement: Agent-specific model selection
-For each agent in the user's OpenCode config that has a `model` field, the wizard SHALL prompt the user to select a model using the interactive arrow-key selector.
+### Requirement: Model selection degrades gracefully
+The interactive model selector SHALL fall back to a non-interactive mode when arrow-key navigation or cursor positioning is not available.
 
-#### Scenario: Agent with model field
-- **WHEN** user config has agent "architect" with model field
-- **THEN** wizard prompts "Select model for architect" with GPT 6 Luna as recommended
-
-#### Scenario: Agent without model field uses provider default
-- **WHEN** no agents have model fields in config
-- **THEN** wizard prompts once for provider model with Mimo V2.6 Flash as recommended
-
-### Requirement: Model selection uses official pricing data
-The selector SHALL display 29 models matching the official OpenCode Go plan with correct prices, monthly limits, and display names.
-
-#### Scenario: 29 official models displayed
-- **WHEN** model selector renders
-- **THEN** exactly 29 models from opencode.ai/v2/docs/console/go are shown with prices and limits
-
-#### Scenario: Stale model IDs removed
-- **WHEN** model selector renders
-- **THEN** models `minimax-m2.7`, `glm-5.1`, `grok-4.6`, `kimi-k2.6`, `qwen3.6-plus`, `qwen3.7-max`, `iceman-contributor-free`, `omen-alpha` are NOT shown
-
-### Requirement: Provider configuration after model selection
-After models are selected, the wizard SHALL configure the `opencode-go` provider with the selected models and API key.
-
-#### Scenario: Provider configured with selected models
-- **WHEN** model selection completes with one or more models
-- **THEN** `configureZenProvider` is called with the selected model IDs
+#### Scenario: No cursor save/restore support
+- **WHEN** the terminal does not support DECSC/DECRC
+- **THEN** `selectModelFromList` uses a simpler number-based or default-selection approach instead of failing silently

@@ -12,6 +12,7 @@ import {
   rmSync,
   readdirSync,
   existsSync,
+  readFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -27,6 +28,9 @@ import {
   versionAtLeast,
   writeMcpEntry,
 } from "../scripts/lib.mjs";
+
+// Namespace import used to assert Zen symbols are no longer exported.
+import * as lib from "../scripts/lib.mjs";
 
 const SCRIPTS = join(process.cwd(), "scripts");
 
@@ -329,6 +333,81 @@ test("check.mjs --json does not report a git MCP server", () => {
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 9. Zen model selection removal (regression)
+// ---------------------------------------------------------------------------
+
+const ZEN_SYMBOLS = [
+  "ZEN_EMBEDDED_PRICING",
+  "configureZenProvider",
+  "selectModelFromList",
+  "fetchZenData",
+  "runModelSelection",
+];
+
+test("lib.mjs: does not export Zen symbols", () => {
+  for (const symbol of ZEN_SYMBOLS) {
+    assert.ok(!(symbol in lib), `lib.mjs must not export ${symbol}`);
+  }
+});
+
+test("setup.mjs: TOTAL_STEPS is 9 (model selection step removed)", () => {
+  const src = readFileSync(join(SCRIPTS, "setup.mjs"), "utf8");
+  assert.ok(src.includes("const TOTAL_STEPS = 9;"), "expected TOTAL_STEPS === 9");
+  assert.ok(!src.includes("TOTAL_STEPS = 10"), "TOTAL_STEPS must not be 10");
+});
+
+test("setup.mjs: no runModelSelection helper", () => {
+  const src = readFileSync(join(SCRIPTS, "setup.mjs"), "utf8");
+  assert.ok(!src.includes("runModelSelection"), "runModelSelection must be removed");
+});
+
+test("setup.mjs: does not import or reference Zen symbols", () => {
+  const src = readFileSync(join(SCRIPTS, "setup.mjs"), "utf8");
+  for (const symbol of ZEN_SYMBOLS) {
+    assert.ok(!src.includes(symbol), `setup.mjs must not reference ${symbol}`);
+  }
+  assert.ok(!/zen/i.test(src), "setup.mjs must not reference Zen (case-insensitive)");
+});
+
+test("deleted spec: openspec/specs/model-selector/spec.md no longer exists", () => {
+  assert.ok(
+    !existsSync(join(process.cwd(), "openspec/specs/model-selector/spec.md")),
+    "model-selector/spec.md must be deleted"
+  );
+});
+
+test("deleted spec: openspec/specs/setup-wizard/spec.md no longer exists", () => {
+  assert.ok(
+    !existsSync(join(process.cwd(), "openspec/specs/setup-wizard/spec.md")),
+    "setup-wizard/spec.md must be deleted"
+  );
+});
+
+test("deleted spec: openspec/specs/zen-provider/spec.md no longer exists", () => {
+  assert.ok(
+    !existsSync(join(process.cwd(), "openspec/specs/zen-provider/spec.md")),
+    "zen-provider/spec.md must be deleted"
+  );
+});
+
+test("deleted doc: docs/changes/2026-10-26-zen-model-selection.md no longer exists", () => {
+  assert.ok(
+    !existsSync(
+      join(process.cwd(), "docs/changes/2026-10-26-zen-model-selection.md")
+    ),
+    "zen-model-selection changelog entry must be deleted"
+  );
+});
+
+test("CHANGELOG.md: no zen-model-selection entry", () => {
+  const changelog = readFileSync(join(process.cwd(), "docs/CHANGELOG.md"), "utf8");
+  assert.ok(
+    !/\[2026-10-26\] zen-model-selection\*\*/m.test(changelog),
+    "CHANGELOG.md must not reference the old zen-model-selection entry"
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,4 @@
+- [ ] Rewrite README.md: English only, ~150 lines max, no Mermaid diagrams
+- [ ] Include: one-sentence purpose, problem solved, bullet feature list, install + usage commands, short agent list
+- [ ] Remove: Spanish section, Mermaid flowcharts, agent architecture tables, troubleshooting credits
+- [ ] Verify file renders correctly (no broken markdown)

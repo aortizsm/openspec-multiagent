@@ -4,7 +4,8 @@ Cambios archivados en orden cronológico inverso.
 
 <!-- latest start -->
 
-- **[2026-10-26] zen-model-selection** — Paso interactivo en `npm run setup` para asignar modelos OpenCode Go a cada agente, con precios scrapeados y recomendaciones inteligentes. ([entrada](changes/2026-10-26-zen-model-selection.md))
+- **[2026-10-27] infra-stability** — El asistente de setup ya no se cuelga en entornos no-TTY o con stdin pipeado; añade `readInput()` primitiva unificada y hace que `ask`/`askText`/`askYesNo` deleguen en ella. ([entrada](changes/2026-10-27-infra-stability.md))
+- **[2026-10-26] remove-zen-model-selection** — Elimina la selección de modelos Zen (OpenCode Go) de `npm run setup`: el asistente pasa de 10 a 9 pasos, ya no hay selector interactivo de modelos ni configuración automática del proveedor `opencode-go`. ([entrada](changes/2026-10-26-remove-zen-model-selection.md))
 - **[2026-10-25] add-security-criteria** — Criterios de seguridad objetivos (12 reglas verificables) y agente `@security-reviewer` como gate obligatorio en el loop. ([entrada](changes/2026-10-25-add-security-criteria.md))
 - **[2026-10-24] add-human-documentation** — Estructura de documentación humana: carpeta `docs/` con CHANGELOG, entradas por change archivado y guías por capacidad. Reglas de idioma (español en docs/, inglés en specs), fuentes de derivación y gate de documentación antes de archivar.
 - **[2026-10-24] add-verifier-agent** — Nuevo agente de verificación independiente. Ejecuta los comandos reales del proyecto y devuelve un veredicto por escenario de la spec. ([entrada](changes/2026-10-24-add-verifier-agent.md)) · ([guía](guides/independent-verification.md))

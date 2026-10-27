@@ -25,7 +25,7 @@
     "install-codegraph": "codegraph install --target=opencode --location=global --yes && codegraph init --yes",
     "reinstall": "node scripts/reinstall.mjs",
     "reset": "node scripts/reset.mjs",
-    "test": "node tests/run.mjs"
+    "test": "node tests/run.mjs && node tests/lib.test.mjs"
   },
   "dependencies": {
     "@fission-ai/openspec": ">=1.14.0"

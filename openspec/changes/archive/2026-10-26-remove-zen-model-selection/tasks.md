@@ -1,0 +1,12 @@
+- [x] Remove Zen imports from scripts/setup.mjs (ZEN_EMBEDDED_PRICING, configureZenProvider, fetchZenData, getZenModelDisplay, parseZenEndpointTable, selectModelFromList)
+- [x] Remove Step 6 "Selecting models for OpenCode Go" from scripts/setup.mjs (lines 212-226)
+- [x] Remove runModelSelection() and helper functions from scripts/setup.mjs (lines 335-401)
+- [x] Adjust TOTAL_STEPS from 10 to 9 in scripts/setup.mjs
+- [x] Remove entire Zen model selection section from scripts/lib.mjs (lines 498-1205)
+- [x] Delete openspec/specs/model-selector/spec.md
+- [x] Delete openspec/specs/setup-wizard/spec.md
+- [x] Delete openspec/specs/zen-provider/spec.md
+- [x] Delete docs/changes/2026-10-26-zen-model-selection.md
+- [x] Update docs/CHANGELOG.md to remove zen-model-selection entry
+- [x] Run npm test and verify all tests pass
+- [x] Verify no Zen references remain in active code (scripts/, openspec/specs/, docs/)

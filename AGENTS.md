@@ -114,6 +114,16 @@ Si el cambio incluye UI/UX, se inserta `@ux-designer` antes de `@developer`:
 - Si el `@developer` cambia codigo despues de un reporte limpio, el reporte caduca: hace falta verificacion nueva.
 - Nadie mas archiva.
 
+## Explicación de solución antes de implementar
+
+Antes de delegar cualquier implementación al @developer, el @architect debe:
+
+1. **Explicar el plan de solución** — qué archivos se modificarán, qué cambios se harán y por qué, basado en proposal.md, design.md y tasks.md del change.
+2. **Obtener aprobación explícita del usuario** — el usuario debe confirmar que el plan es correcto antes de que se escriba código.
+3. **Solo entonces proceder** — crear los artifacts restantes o delegar la implementación.
+
+Esto evita que el desarrolador implemente algo que el usuario no haya aprobado conceptualmente.
+
 ## Pre-review gate
 
 Antes de enviar al @code-reviewer, el architect verifica:
