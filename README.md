@@ -28,15 +28,24 @@ No code is written until the spec is approved.
 
 ```mermaid
 flowchart LR
-    A[User asks for something] --> B[@architect - plans, writes specs, delegates, archives]
-    B --> C[@developer - implements the code]
-    C --> D[@test-engineer - writes tests]
-    D --> E[@code-reviewer - reviews clean code]
-    E --> F[@security-reviewer - reviews security]
-    F --> G[@verifier - runs commands and verifies]
-    G --> H[@architect - archives]
+    A("User asks for something")
+    B("@architect<br/>plans, writes specs,<br/>delegates, archives")
+    C("@developer<br/>implements the code")
+    D("@test-engineer<br/>writes tests")
+    E("@code-reviewer<br/>reviews clean code")
+    F("@security-reviewer<br/>reviews security")
+    G("@verifier<br/>runs commands and verifies")
+    H("@architect<br/>archives the change")
 
-    B -.-> |if UI| U[@ux-designer - designs screens and tokens]
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+
+    B -.-> |UI| U("@ux-designer<br/>designs screens<br/>and tokens")
     U -.-> C
 ```
 
@@ -67,6 +76,18 @@ node scripts/setup.mjs
 ```
 
 Then open OpenCode in your project and describe the change you want to make to `@architect`.
+
+## Memory (Engram)
+
+Engram is the project's persistent memory. It stores agreed decisions, flow rules, and change context so work can resume across sessions without repeating announcements or losing state.
+
+- `mem_context` — recover current intent and open threads at session start
+- `mem_save` — record decisions, rules, and checkpoint state
+- `mem_search` — find past decisions before re-asking
+
+Flow rules saved in Engram prevent announcement loops: execute first, announce later; one subagent at a time; stop and ask if repeating an action without executing it.
+
+**Original project:** [Gentleman-Programming/engram](https://github.com/Gentleman-Programming/engram)
 
 ## npm scripts
 
