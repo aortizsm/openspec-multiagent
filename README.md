@@ -16,15 +16,29 @@ No code is written until the spec is approved.
 
 ## What the agents do
 
-- `@architect` — orchestrates the loop, writes specs, delegates, archives changes
-- `@developer` — implements the spec following repo conventions
-- `@code-reviewer` — reviews code against clean-code criteria and tests
-- `@security-reviewer` — reviews code against security criteria
-- `@verifier` — runs project commands and maps spec scenarios to evidence
-- `@test-engineer` — writes unit and integration tests from spec scenarios
-- `@ux-designer` — generates wireframes and design tokens for UI changes
-- `@repo-scout` — read-only scan of stack, conventions, and commands
-- `@diff-summarizer` — terse diff summary with risk hotspots
+**@architect**: plans the change, writes specs, delegates, approves and archives
+**@developer**: implements the feature following repo conventions
+**@test-engineer**: writes unit and integration tests from spec scenarios
+**@code-reviewer**: reviews code against clean-code criteria and tests
+**@security-reviewer**: reviews code against security criteria
+**@verifier**: runs real commands and maps spec scenarios to pass/fail
+**@ux-designer**: generates wireframes and design tokens for UI changes
+**@repo-scout**: scans stack, conventions, and commands
+**@diff-summarizer**: terse diff summary with risk hotspots
+
+```mermaid
+flowchart LR
+    A[User asks for something] --> B[@architect - plans, writes specs, delegates, archives]
+    B --> C[@developer - implements the code]
+    C --> D[@test-engineer - writes tests]
+    D --> E[@code-reviewer - reviews clean code]
+    E --> F[@security-reviewer - reviews security]
+    F --> G[@verifier - runs commands and verifies]
+    G --> H[@architect - archives]
+
+    B -.-> |if UI| U[@ux-designer - designs screens and tokens]
+    U -.-> C
+```
 
 ## Requirements
 
