@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { saveCheckpoint, rollbackToCheckpoint } from './rollback.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -64,7 +65,7 @@ function runCommand(command, args, options = {}) {
     ...options.env
   };
 
-  const result = spawnSync(command, args, {
+  const spawnResult = spawnSync(command, args, {
     cwd: PROJECT_ROOT,
     env,
     stdio: 'inherit',
@@ -72,19 +73,19 @@ function runCommand(command, args, options = {}) {
     ...options
   });
 
-  return result;
+  return spawnResult;
 }
 
 function runAgent(agent, changeName) {
   console.log(`\n=== Running ${agent} for change "${changeName}" ===`);
   
-  const result = runCommand('npx', ['opencode', 'run', '-a', agent, '--', changeName]);
+  const agentResult = runCommand('npx', ['opencode', 'run', '-a', agent, '--', changeName]);
   
-  if (result.status !== 0) {
+  if (agentResult.status !== 0) {
     const resumeCmd = `node scripts/orchestrate.mjs ${changeName} --from ${agent}`;
-    console.error(`\n❌ Agent "${agent}" failed with exit code ${result.status}`);
+    console.error(`\n❌ Agent "${agent}" failed with exit code ${agentResult.status}`);
     console.error(`Resume with: ${resumeCmd}`);
-    process.exit(result.status || 1);
+    throw new Error(`Agent "${agent}" failed with exit code ${agentResult.status}`);
   }
   
   console.log(`✅ ${agent} completed successfully`);
@@ -92,11 +93,11 @@ function runAgent(agent, changeName) {
 
 function runOpenspecValidate(changeName) {
   console.log(`\n=== Running openspec validate ===`);
-  const result = runCommand('npx', ['openspec', 'validate', changeName]);
+  const validateResult = runCommand('npx', ['openspec', 'validate', changeName]);
   
-  if (result.status !== 0) {
-    console.error(`\n❌ openspec validate failed with exit code ${result.status}`);
-    process.exit(result.status || 1);
+  if (validateResult.status !== 0) {
+    console.error(`\n❌ openspec validate failed with exit code ${validateResult.status}`);
+    process.exit(validateResult.status || 1);
   }
   
   console.log(`✅ openspec validate passed`);
@@ -104,11 +105,11 @@ function runOpenspecValidate(changeName) {
 
 function runOpenspecArchive(changeName) {
   console.log(`\n=== Running openspec archive ===`);
-  const result = runCommand('npx', ['openspec', 'archive', changeName, '--yes']);
+  const archiveResult = runCommand('npx', ['openspec', 'archive', changeName, '--yes']);
   
-  if (result.status !== 0) {
-    console.error(`\n❌ openspec archive failed with exit code ${result.status}`);
-    process.exit(result.status || 1);
+  if (archiveResult.status !== 0) {
+    console.error(`\n❌ openspec archive failed with exit code ${archiveResult.status}`);
+    process.exit(archiveResult.status || 1);
   }
   
   console.log(`✅ openspec archive completed`);
@@ -145,7 +146,13 @@ function main() {
   }
 
   for (const agent of agentsToRun) {
-    runAgent(agent, changeName);
+    try {
+      saveCheckpoint(agent);
+      runAgent(agent, changeName);
+    } catch {
+      rollbackToCheckpoint();
+      process.exit(1);
+    }
   }
 
   runOpenspecValidate(changeName);

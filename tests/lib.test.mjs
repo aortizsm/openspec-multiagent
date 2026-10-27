@@ -346,14 +346,14 @@ function stdoutStream({ tty = false } = {}) {
   // ------------------------------------------------------------------
   // contextBundle
   // ------------------------------------------------------------------
-  await testAsync("contextBundle returns a Markdown bundle string", async () => {
-    const bundle = await contextBundle("context-bundle");
+  await testAsync("contextBundle returns a Markdown bundle string for auto-rollback", async () => {
+    const bundle = await contextBundle("auto-rollback");
     assert.strictEqual(typeof bundle, "string");
     assert.ok(bundle.length > 0, "bundle is empty");
   });
 
-  await testAsync("contextBundle contains all five sections", async () => {
-    const bundle = await contextBundle("context-bundle");
+  await testAsync("contextBundle contains all five sections for auto-rollback", async () => {
+    const bundle = await contextBundle("auto-rollback");
     for (const section of [
       "## Proposal",
       "## Design",
@@ -365,13 +365,13 @@ function stdoutStream({ tty = false } = {}) {
     }
   });
 
-  await testAsync("contextBundle contains proposal.md content (# Proposal)", async () => {
-    const bundle = await contextBundle("context-bundle");
+  await testAsync("contextBundle contains proposal.md content (# Proposal) for auto-rollback", async () => {
+    const bundle = await contextBundle("auto-rollback");
     assert.ok(bundle.includes("# Proposal"), "bundle missing proposal heading");
   });
 
-  await testAsync("contextBundle contains design.md content (# Design)", async () => {
-    const bundle = await contextBundle("context-bundle");
+  await testAsync("contextBundle contains design.md content (# Design) for auto-rollback", async () => {
+    const bundle = await contextBundle("auto-rollback");
     assert.ok(bundle.includes("# Design"), "bundle missing design heading");
   });
 
@@ -397,6 +397,60 @@ function stdoutStream({ tty = false } = {}) {
       process.exit = originalExit;
       console.error = originalError;
     }
+  });
+
+  // ------------------------------------------------------------------
+  // saveCheckpoint / rollbackToCheckpoint
+  // ------------------------------------------------------------------
+  const { register } = await import("node:module");
+  const loaderUrl = new URL("./mock-loader.mjs", import.meta.url).href;
+  await register(loaderUrl, () => {});
+  const { saveCheckpoint, rollbackToCheckpoint } = await import("../scripts/rollback.mjs");
+  const { calls } = await import("./mock-child-process.mjs");
+
+  await testAsync("saveCheckpoint validates phase name (rejects spaces)", async () => {
+    let threw = false;
+    try {
+      saveCheckpoint("bad phase");
+    } catch (err) {
+      threw = true;
+    }
+    assert.strictEqual(threw, true, "expected saveCheckpoint to throw for invalid phase name");
+  });
+
+  await testAsync("saveCheckpoint accepts valid phase name", async () => {
+    let threw = false;
+    try {
+      saveCheckpoint("desarrollador");
+    } catch (err) {
+      threw = true;
+    }
+    assert.strictEqual(threw, false, "valid phase name should not throw");
+  });
+
+  await testAsync("saveCheckpoint builds checkpoint message with phase", () => {
+    calls.length = 0;
+    const hash = saveCheckpoint("desarrollador");
+    const last = calls[calls.length - 1];
+    assert.ok(last, "execFileSync should have been called");
+    assert.strictEqual(last.kind, "execFileSync", "should use execFileSync, not execSync");
+    assert.deepStrictEqual(last.file, "git");
+    assert.ok(
+      last.args.includes("rollback: checkpoint before desarrollador"),
+      "checkpoint message should contain phase name"
+    );
+    assert.ok(last.args.includes("--allow-empty"));
+    assert.strictEqual(hash, "deadbeef99");
+  });
+
+  await testAsync("rollbackToCheckpoint calls git reset --hard with checkpoint hash", () => {
+    calls.length = 0;
+    rollbackToCheckpoint();
+    const last = calls[calls.length - 1];
+    assert.ok(last, "execSync should have been called");
+    assert.strictEqual(last.kind, "execSync");
+    assert.ok(last.command.includes("git reset --hard"), "rollback should run git reset --hard");
+    assert.ok(last.command.includes("deadbeef99"), "rollback should target the checkpoint hash");
   });
 
   console.log(`\nResults: ${passed} passed, ${failed} failed`);
