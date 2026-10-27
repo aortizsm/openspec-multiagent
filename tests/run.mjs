@@ -379,10 +379,10 @@ test("deleted spec: openspec/specs/model-selector/spec.md no longer exists", () 
   );
 });
 
-test("deleted spec: openspec/specs/setup-wizard/spec.md no longer exists", () => {
+test("added spec: openspec/specs/setup-wizard/spec.md exists", () => {
   assert.ok(
-    !existsSync(join(process.cwd(), "openspec/specs/setup-wizard/spec.md")),
-    "setup-wizard/spec.md must be deleted"
+    existsSync(join(process.cwd(), "openspec/specs/setup-wizard/spec.md")),
+    "setup-wizard/spec.md must exist"
   );
 });
 

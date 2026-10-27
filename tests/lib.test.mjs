@@ -14,6 +14,8 @@ import {
   readInput,
 } from "../scripts/lib.mjs";
 
+import { contextBundle } from "../scripts/context-bundle.mjs";
+
 let passed = 0;
 let failed = 0;
 
@@ -339,6 +341,62 @@ function stdoutStream({ tty = false } = {}) {
 
   await testAsync("closePrompts does not throw", () => {
     closePrompts();
+  });
+
+  // ------------------------------------------------------------------
+  // contextBundle
+  // ------------------------------------------------------------------
+  await testAsync("contextBundle returns a Markdown bundle string", async () => {
+    const bundle = await contextBundle("context-bundle");
+    assert.strictEqual(typeof bundle, "string");
+    assert.ok(bundle.length > 0, "bundle is empty");
+  });
+
+  await testAsync("contextBundle contains all five sections", async () => {
+    const bundle = await contextBundle("context-bundle");
+    for (const section of [
+      "## Proposal",
+      "## Design",
+      "## Tasks",
+      "## Spec",
+      "## Git Diff",
+    ]) {
+      assert.ok(bundle.includes(section), `missing section: ${section}`);
+    }
+  });
+
+  await testAsync("contextBundle contains proposal.md content (# Proposal)", async () => {
+    const bundle = await contextBundle("context-bundle");
+    assert.ok(bundle.includes("# Proposal"), "bundle missing proposal heading");
+  });
+
+  await testAsync("contextBundle contains design.md content (# Design)", async () => {
+    const bundle = await contextBundle("context-bundle");
+    assert.ok(bundle.includes("# Design"), "bundle missing design heading");
+  });
+
+  await testAsync("contextBundle exits with error for nonexistent change", async () => {
+    const originalExit = process.exit;
+    const originalError = console.error;
+    let exited = false;
+    process.exit = (code) => {
+      exited = true;
+      throw new Error(`process.exit(${code})`);
+    };
+    console.error = () => {};
+    try {
+      let threw = false;
+      try {
+        contextBundle("nonexistent-change");
+      } catch (err) {
+        threw = true;
+      }
+      assert.strictEqual(threw, true, "contextBundle did not throw");
+      assert.strictEqual(exited, true, "process.exit was not called");
+    } finally {
+      process.exit = originalExit;
+      console.error = originalError;
+    }
   });
 
   console.log(`\nResults: ${passed} passed, ${failed} failed`);

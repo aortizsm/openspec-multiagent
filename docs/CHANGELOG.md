@@ -4,6 +4,7 @@ Cambios archivados en orden cronológico inverso.
 
 <!-- latest start -->
 
+- **[2026-10-27] context-bundle** — Nuevo script `scripts/context-bundle.mjs` que genera un único bundle Markdown (propuesta, diseño, tareas, spec y `git diff`) de un cambio OpenSpec para entrega de contexto entre agentes; falla rápido (exit 1) si el cambio no existe. Añade los comandos npm `context-bundle` y `context`. ([entrada](changes/2026-10-27-context-bundle.md))
 - **[2026-10-27] infra-stability** — El asistente de setup ya no se cuelga en entornos no-TTY o con stdin pipeado; añade `readInput()` primitiva unificada y hace que `ask`/`askText`/`askYesNo` deleguen en ella. ([entrada](changes/2026-10-27-infra-stability.md))
 - **[2026-10-26] remove-zen-model-selection** — Elimina la selección de modelos Zen (OpenCode Go) de `npm run setup`: el asistente pasa de 10 a 9 pasos, ya no hay selector interactivo de modelos ni configuración automática del proveedor `opencode-go`. ([entrada](changes/2026-10-26-remove-zen-model-selection.md))
 - **[2026-10-25] add-security-criteria** — Criterios de seguridad objetivos (12 reglas verificables) y agente `@security-reviewer` como gate obligatorio en el loop. ([entrada](changes/2026-10-25-add-security-criteria.md))
