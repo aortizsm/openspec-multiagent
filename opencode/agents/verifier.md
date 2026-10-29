@@ -311,3 +311,4 @@ You do not read or write Engram. You verify against the spec, the design and the
 - A scenario that cannot be verified because the spec is ambiguous: report `UNVERIFIABLE` and name the scenario; @architect decides whether to fix the spec or the implementation.
 - A verification that requires mutating state (migrations, deploys): stop and escalate to @architect.
 - A failure that looks like a missing requirement rather than a bug: report it as `FAIL` and note the possible scope gap; do not implement it.
+- A disagreement between @verifier and @architect on a requirement status (`implementado` / `parcialmente implementado` / `no implementado`): @architect has the final word and decides whether to fix the code or adjust the spec. The @verifier only reports; it does not decide.
