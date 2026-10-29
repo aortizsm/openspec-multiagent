@@ -4,6 +4,8 @@ Cambios archivados en orden cronológico inverso.
 
 <!-- latest start -->
 
+- **[2026-10-29] verifier-spec-compliance** — El `@verifier` ahora revisa que cada requerimiento funcional de la spec esté implementado en el código fuente (spec-compliance review), no solo que los tests pasen. Añade sección `## Spec Compliance` al reporte. ([entrada](changes/2026-10-29-verifier-spec-compliance.md))
+- **[2026-10-29] verifier-conflict-resolution** — El `@verifier` tiene una regla de escalación: desacuerdos con @architect sobre estados de requerimiento (`implementado` / `parcialmente implementado` / `no implementado`) se resuelven por @architect con la última palabra. ([entrada](changes/2026-10-29-verifier-conflict-resolution.md))
 - **[2026-10-27] auto-rollback** — Automatic git checkpoint before each pipeline phase with rollback on failure. ([entrada](changes/2026-10-27-auto-rollback.md))
 - **[2026-10-27] context-bundle** — Nuevo script `scripts/context-bundle.mjs` que genera un único bundle Markdown (propuesta, diseño, tareas, spec y `git diff`) de un cambio OpenSpec para entrega de contexto entre agentes; falla rápido (exit 1) si el cambio no existe. Añade los comandos npm `context-bundle` y `context`. ([entrada](changes/2026-10-27-context-bundle.md))
 - **[2026-10-27] infra-stability** — El asistente de setup ya no se cuelga en entornos no-TTY o con stdin pipeado; añade `readInput()` primitiva unificada y hace que `ask`/`askText`/`askYesNo` deleguen en ella. ([entrada](changes/2026-10-27-infra-stability.md))

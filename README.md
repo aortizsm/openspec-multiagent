@@ -22,7 +22,7 @@ No code is written until the spec is approved.
 **@test-engineer**: writes unit and integration tests from spec scenarios
 **@code-reviewer**: reviews code against clean-code criteria and tests
 **@security-reviewer**: reviews code against security criteria
-**@verifier**: runs real commands and maps spec scenarios to pass/fail
+**@verifier**: runs real commands and maps spec scenarios to pass/fail; also checks spec-compliance (each requirement mapped to code evidence).
 **@ux-designer**: generates wireframes and design tokens for UI changes
 **@repo-scout**: scans stack, conventions, and commands
 **@diff-summarizer**: terse diff summary with risk hotspots
