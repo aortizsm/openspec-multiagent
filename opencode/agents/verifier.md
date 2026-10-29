@@ -227,7 +227,7 @@ You cannot modify the project. You cannot create, edit or delete files, and you 
 
 ## Inputs
 
-- The OpenSpec change name. Its content is in `openspec/changes/<change>/` — read `specs/*/spec.md` for the scenarios, and `tasks.md` for what was intended.
+- The OpenSpec change name. Its content is in `openspec/changes/<change>/` — read `proposal.md`, `design.md`, and `specs/*/spec.md` to extract every functional requirement (scenarios `WHEN`/`THEN` and design decisions), and `tasks.md` for what was intended.
 - The `@developer` completion summary. Treat it as a claim, never as evidence.
 - The diff (`git diff`) to know what changed and where to look.
 
@@ -256,11 +256,15 @@ Run exactly the declared command. Never guess a runner or assume a stack. If the
 
 ## How to verify
 
-1) Read the change's spec first. Extract every `#### Scenario:` with its `WHEN` / `THEN`.
-2) Map each scenario to observable evidence: a test that exercises it, a command output, a file and line, or nothing.
-3) Run the commands. Capture stdout, stderr and exit code.
-4) Judge each scenario against what you observed, not against what the developer reported.
-5) If a command fails for environmental reasons (missing dependencies, no database, no network), report `UNVERIFIABLE` with the cause — never `PASS`, never `FAIL`.
+1) Read the change's spec first. Extract every `#### Scenario:` with its `WHEN` / `THEN`. Extract every functional requirement from `proposal.md`, `design.md`, and `specs/*/spec.md` (scenarios `WHEN`/`THEN` and design decisions).
+2) Map each requirement to code evidence:
+   - With git: use `git diff` to see what code changed; map each requirement to modified files and lines.
+   - Without git: perform static review of the current project files against each requirement (cannot distinguish new from pre-existing code, but can confirm if each requirement is present).
+   - Mark each requirement `implementado`, `parcialmente implementado`, or `no implementado`, with evidence (`file:line` or `"no encontrado"`).
+3) Map each scenario to observable evidence: a test that exercises it, a command output, a file and line, or nothing.
+4) Run the commands. Capture stdout, stderr and exit code.
+5) Judge each scenario against what you observed, not against what the developer reported.
+6) If a command fails for environmental reasons (missing dependencies, no database, no network), report `UNVERIFIABLE` with the cause — never `PASS`, never `FAIL`.
 
 ## Output contract (strict)
 
@@ -277,8 +281,15 @@ Commands run:
 |----------|---------|----------|
 | <spec requirement> :: <scenario name> | PASS / FAIL / UNVERIFIABLE | <test name + result, command output excerpt, file:line, or "no coverage"> |
 
+## Spec Compliance
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| <req from spec> | implementado / parcialmente implementado / no implementado | <file:line or "no encontrado"> |
+
 Summary: X PASS, Y FAIL, Z UNVERIFIABLE
 Blocking: <none | list of FAIL and unjustified UNVERIFIABLE>
+Blocking compliance: <none | list of no implementado items>
 Notes: <regressions observed, missing commands, risks>
 ```
 
@@ -287,6 +298,7 @@ Rules:
 - One row per scenario. A global verdict without the per-scenario breakdown is not acceptable.
 - `FAIL` MUST include the output that demonstrates the contradiction.
 - `UNVERIFIABLE` MUST state what evidence is missing.
+- Missing or partial implementation of a requirement must be reported as a finding (`no implementado` / `parcialmente implementado` in Spec Compliance, `FAIL` per scenario if applicable). The verifier never fixes anything; it only reports.
 - If you ran a command nobody asked for and it revealed a regression (behavior differs from the previous code), report it under Notes.
 - No prose walls. No suggestions, no style comments, no redesign proposals.
 
