@@ -53,6 +53,9 @@ permissions:
   - action: shell
     resource: "openspec validate*"
     effect: allow
+  - action: shell
+    resource: "npx openspec validate*"
+    effect: allow
   # --- tests ----------------------------------------------------------------
   - action: shell
     resource: "npm test*"
@@ -201,6 +204,12 @@ permissions:
     effect: allow
   - action: shell
     resource: "make check*"
+    effect: allow
+  - action: shell
+    resource: "npx tsx*"
+    effect: allow
+  - action: shell
+    resource: "npx biome*"
     effect: allow
   - action: subagent
     resource: "repo-scout"
