@@ -1,0 +1,6 @@
+- [x] Add CodeGraph step to scripts/init.mjs (mandatory, no prompt)
+- [x] Update TOTAL_STEPS from 5 to 6
+- [x] Update step numbering: CodeGraph step 3, Context7 step 4, Engram step 5, Verification step 6
+- [x] Update --help text to reflect 6 steps
+- [x] Run tests: npm test (syntax OK; env failures preexisting — no npm in PATH)
+- [ ] Verify: dry-run of init.mjs does not break existing behavior

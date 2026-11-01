@@ -4,6 +4,7 @@ Cambios archivados en orden cronológico inverso.
 
 <!-- latest start -->
 
+- **[2026-11-01] add-codegraph-mandatory-step** — El wizard `npx openspec-multiagent init` ahora instala y cablea CodeGraph como paso 3 obligatorio (sin prompt), al nivel de GitHub y Engram. Si `codegraph` no está en PATH, se instala globalmente vía `npm install -g @colbymchenry/codegraph` y se ejecuta `codegraph install --target=opencode --location=global --yes`. En modo `--dry-run` solo informa sin ejecutar instalaciones reales. Context7 y Engram siguen siendo opcionales. ([entrada](changes/2026-11-01-add-codegraph-mandatory-step.md))
 - **[2026-10-29] verifier-spec-compliance** — El `@verifier` ahora revisa que cada requerimiento funcional de la spec esté implementado en el código fuente (spec-compliance review), no solo que los tests pasen. Añade sección `## Spec Compliance` al reporte. ([entrada](changes/2026-10-29-verifier-spec-compliance.md))
 - **[2026-10-29] verifier-conflict-resolution** — El `@verifier` tiene una regla de escalación: desacuerdos con @architect sobre estados de requerimiento (`implementado` / `parcialmente implementado` / `no implementado`) se resuelven por @architect con la última palabra. ([entrada](changes/2026-10-29-verifier-conflict-resolution.md))
 - **[2026-10-27] auto-rollback** — Automatic git checkpoint before each pipeline phase with rollback on failure. ([entrada](changes/2026-10-27-auto-rollback.md))

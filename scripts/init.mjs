@@ -5,12 +5,13 @@
 //
 //   npx openspec-multiagent init
 //
-// Wizard steps (5):
+// Wizard steps (6):
 //   1. OpenSpec project      — runs `openspec init --tools opencode`
 //   2. Agent definitions     — copies .opencode/agents into the project
-//   3. Context7 MCP server   — optional, remote/local, with/without API key
-//   4. Engram MCP server     — optional, local binary on PATH (ENGRAM_BIN)
-//   5. Verification          — runs check.mjs and prints status: READY
+//   3. CodeGraph MCP server  — mandatory, installs and wires @colbymchenry/codegraph
+//   4. Context7 MCP server   — optional, remote/local, with/without API key
+//   5. Engram MCP server     — optional, local binary on PATH (ENGRAM_BIN)
+//   6. Verification          — runs check.mjs and prints status: READY
 //
 // It never runs `npm install` inside your project: OpenSpec is fetched through
 // npx, so no node_modules is created. Use --global-agents to install the agents
@@ -60,6 +61,14 @@ Options:
   --dry-run              Show what would happen without changing anything
   --help                 Show this help
 
+Wizard steps (6):
+  1. OpenSpec project      — runs 'openspec init --tools opencode'
+  2. Agent definitions     — copies .opencode/agents into the project
+  3. CodeGraph MCP server  — mandatory, installs and wires @colbymchenry/codegraph
+  4. Context7 MCP server   — optional, remote/local, with/without API key
+  5. Engram MCP server     — optional, local binary on PATH (ENGRAM_BIN)
+  6. Verification          — runs check.mjs and prints status: READY
+
 Run it inside the project you want to use the workflow in.`);
 
   process.exit(0);
@@ -104,7 +113,8 @@ if (engramFlag === "none") engramEnabled = false;
 const step = (n, total, msg) => console.log(`\n[${n}/${total}] ${msg}`);
 const info = (msg) => console.log(`      ${msg}`);
 const warn = (msg) => console.error(`      WARNING: ${msg}`);
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
+const CODEGRAPH_BIN = "codegraph";
 
 console.log(`openspec-multiagent init`);
 console.log(`  project: ${projectDir}`);
@@ -114,7 +124,7 @@ if (DRY_RUN) console.log(`  mode:    dry-run (nothing will be written)`);
 // In a TTY we ask interactively; otherwise use flags/defaults.
 if (!context7AnsweredByFlags && engramFlag === undefined && !NO_PROMPT) {
   console.log("");
-  console.log("This wizard sets up OpenSpec, the agents, and two optional MCP servers.");
+  console.log("This wizard sets up OpenSpec, the agents, and MCP servers (CodeGraph mandatory, Context7 and Engram optional).");
   console.log("");
 }
 
@@ -182,9 +192,88 @@ if (DRY_RUN) agentsArgs.push("--dry-run");
 }
 
 // ---------------------------------------------------------------------------
-// Step 3: Context7 MCP server (interactive TUI)
+// Step 3: CodeGraph MCP server (mandatory)
 // ---------------------------------------------------------------------------
-step(3, TOTAL_STEPS, "Context7 MCP server");
+step(3, TOTAL_STEPS, "CodeGraph MCP server");
+
+function resolveBinary(name) {
+  return which(name);
+}
+
+function spawnCommand(bin, args, options) {
+  const spawnResult = spawnSync(bin, args, options);
+  failOnError(spawnResult, `Command failed: ${bin} ${args.join(" ")}`);
+  return spawnResult;
+}
+
+function abortWithError(message) {
+  console.error(`\nERROR: ${message}`);
+  process.exit(1);
+}
+
+function failOnError(spawnResult, errorMessage) {
+  if (spawnResult.status !== 0) {
+    console.error(`\nERROR: ${errorMessage}`);
+    process.exit(1);
+  }
+}
+
+function isCodegraphOnPath() {
+  return resolveBinary(CODEGRAPH_BIN) !== null;
+}
+
+function installCodegraphGlobally() {
+  const npmBin = resolveBinary(process.platform === "win32" ? "npm.cmd" : "npm");
+  info("codegraph not found on PATH; installing globally...");
+  spawnCommand(
+    npmBin,
+    ["install", "-g", "@colbymchenry/codegraph"],
+    { stdio: "inherit", shell: false },
+  );
+}
+
+function verifyCodegraphInstalled() {
+  const resolved = resolveBinary(CODEGRAPH_BIN);
+  if (!resolved) {
+    abortWithError(
+      "codegraph CLI not found on PATH after install. Try: npm i -g @colbymchenry/codegraph",
+    );
+  }
+}
+
+function ensureCodegraphInstalled() {
+  if (!isCodegraphOnPath()) {
+    installCodegraphGlobally();
+    verifyCodegraphInstalled();
+  }
+}
+
+function wireCodegraphToOpencode() {
+  info("Wiring CodeGraph to OpenCode...");
+  const codegraphBin = resolveBinary(CODEGRAPH_BIN);
+  const wireArgs = ["install", "--target=opencode", "--location=global", "--yes"];
+  spawnCommand(codegraphBin, wireArgs, {
+    stdio: "inherit",
+    shell: false,
+  });
+  info("CodeGraph wired to OpenCode");
+}
+
+async function installCodeGraph() {
+  ensureCodegraphInstalled();
+  wireCodegraphToOpencode();
+}
+
+if (DRY_RUN) {
+  info("[dry-run] would install and wire CodeGraph MCP server");
+} else {
+  await installCodeGraph();
+}
+
+// ---------------------------------------------------------------------------
+// Step 4: Context7 MCP server (interactive TUI)
+// ---------------------------------------------------------------------------
+step(4, TOTAL_STEPS, "Context7 MCP server");
 
 async function askContext7() {
   if (!context7Enabled) {
@@ -243,9 +332,9 @@ if (!context7AnsweredByFlags && !NO_PROMPT) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4: Engram MCP server (interactive TUI)
+// Step 5: Engram MCP server (interactive TUI)
 // ---------------------------------------------------------------------------
-step(4, TOTAL_STEPS, "Engram MCP server");
+step(5, TOTAL_STEPS, "Engram MCP server");
 
 async function askEngram() {
   const engramBin = process.env.ENGRAM_BIN || "engram";
@@ -295,9 +384,9 @@ if (engramFlag === undefined && !NO_PROMPT) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 5: Verification
+// Step 6: Verification
 // ---------------------------------------------------------------------------
-step(5, TOTAL_STEPS, "Verification");
+step(6, TOTAL_STEPS, "Verification");
 if (DRY_RUN) {
   info("[dry-run] check.mjs");
 } else {
