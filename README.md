@@ -64,6 +64,8 @@ flowchart LR
 | Context7 | any | Up-to-date library/framework docs |
 | OpenCode | V2 | Agent definitions and config use V2 shape |
 
+> **Note:** Engram (project memory) and CodeGraph (code symbol graph) are optional components. They are not required for the OpenSpec multi-agent workflow to function.
+
 ## Quick start
 
 Install and configure the workflow in your project:
