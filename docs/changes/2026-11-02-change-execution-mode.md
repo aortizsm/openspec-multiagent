@@ -31,7 +31,7 @@ execution-mode: asistido
 ```
 
 - **Asistido:** el architect consulta al usuario sus dudas antes de delegar al @developer y antes de pasar a @code-reviewer, @security-reviewer y @verifier.
-- **Automático:** el architect decide internamente ante dudas y delega automáticamente a @developer → @code-reviewer → @security-reviewer → @verifier, registrando la decisión en el completion report.
+- **Automático:** el architect decide internamente ante dudas y delega automáticamente a @developer → [@code-reviewer + @security-reviewer en paralelo] → @verifier, registrando la decisión en el completion report.
 
 ## Impacto / Migración
 

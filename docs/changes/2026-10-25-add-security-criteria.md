@@ -11,7 +11,7 @@ El workflow multiagente no tiene un gate de revisión de seguridad. El `code-rev
 
 - **Nueva spec `security-criteria`:** 12 criterios objetivos y verificables sin interpretar intención, derivados de patrones OWASP.
 - **Nuevo agente `@security-reviewer`:** subagente que evalúa código contra los 12 criterios y devuelve hallazgos etiquetados como CRITICAL, WARNING o SUGGESTION.
-- **Loop ampliado:** `@developer → @code-reviewer → @security-reviewer → @verifier → @architect archiva`. El `security-reviewer` es un gate obligatorio antes del `verifier`.
+- **Loop ampliado:** `@developer → [@code-reviewer + @security-reviewer en paralelo] → @verifier → @architect archiva`. El `security-reviewer` es un gate obligatorio antes del `verifier`.
 - **`AGENTS.md` actualizado:** tabla de 12 criterios de seguridad junto a la tabla de código limpio.
 - **`@developer` y `@code-reviewer` actualizados:** referencias a los criterios de seguridad en sus prompts.
 - **`@architect` actualizado:** instrucciones para invocar al `security-reviewer` en el loop.
@@ -39,7 +39,7 @@ El workflow multiagente no tiene un gate de revisión de seguridad. El `code-rev
 Se inserta un nuevo gate en el loop de implementación:
 
 ```
-@developer → @code-reviewer → @security-reviewer → @verifier → @architect archiva
+@developer → [@code-reviewer + @security-reviewer en paralelo] → @verifier → @architect archiva
 ```
 
 El `@security-reviewer` evalúa código contra los 12 criterios. Si encuentra hallazgos CRITICAL, el cambio no puede proceder hasta que se corrijan. El `@architect` no archiva sin la aprobación del `@security-reviewer` (check 4 del cierre).
