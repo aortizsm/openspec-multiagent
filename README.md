@@ -17,15 +17,19 @@ No code is written until the spec is approved.
 
 ## What the agents do
 
-**@architect**: plans the change, writes specs, delegates, approves and archives
-**@developer**: implements the feature following repo conventions
-**@test-engineer**: writes unit and integration tests from spec scenarios
-**@code-reviewer**: reviews code against clean-code criteria and tests
-**@security-reviewer**: reviews code against security criteria
-**@verifier**: runs real commands and maps spec scenarios to pass/fail; also checks spec-compliance (each requirement mapped to code evidence).
-**@ux-designer**: generates wireframes and design tokens for UI changes
-**@repo-scout**: scans stack, conventions, and commands
-**@diff-summarizer**: terse diff summary with risk hotspots
+| Agent | Responsibilities | Access allowed | Access denied | Mode |
+|-------|-----------------|----------------|---------------|------|
+| **@architect** | Plans changes, writes OpenSpec specs, delegates work, approves reviews, archives changes; never writes source code. Drives the spec-driven loop. | Edit `openspec/**`, `AGENTS.md`, `opencode/agents/*`; read-only shell commands (`ls`, `cat`, `git status/diff/log/show`, `npm test`, `openspec validate`, `echo`); subagent, skill, read, glob, grep, webfetch, websearch on `*` | Edit `*` (denied: no source code edits outside OpenSpec/spec/agent files) | Primary (assisted or automatic execution mode) |
+| **@developer** | Implements OpenSpec changes following repo conventions; YAGNI; clean code; adds high-ROI tests; validates before reporting. | Edit `*`; shell `*`; subagent `repo-scout`, `diff-summarizer`; skill, read, glob, grep on `*` | None explicit (edit and shell on `*` are allowed) | Subagent |
+| **@code-reviewer** | Reviews code against clean-code criteria (12 rules) and tests; approves or requests changes; never closes specs. | Git read-only (`status`, `diff`, `log`, `show`); `echo`, `ls`, `pwd`, `cat`; `openspec show/list`; test commands (`npm test`, `pytest`, `cargo test`, etc.); subagent `repo-scout`, `diff-summarizer`; skill, read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
+| **@security-reviewer** | Evaluates code against 12 security criteria; tags findings CRITICAL/WARNING/SUGGESTION; never modifies code. | Git read-only; `echo`, `ls`, `pwd`, `cat`, `head`, `tail`, `wc`; `grep -rn *`; `openspec show/list`; subagent `repo-scout`; skill, read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
+| **@verifier** | Independently verifies implemented changes by running real project commands; maps spec scenarios to PASS/FAIL/UNVERIFIABLE; never writes code. | Read-only shell: `echo`, `ls`, `pwd`, `cat`, `head`, `tail`, `wc`; git read-only; `openspec show/list/validate`; test commands (`npm test`, `pytest`, `go test`, etc.); build/lint/typecheck commands (`npm run build`, `tsc`, `eslint`, etc.); subagent `repo-scout`; skill, read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed; no mutations, deploys, or installs) | Subagent |
+| **@test-engineer** | Writes unit and integration tests from OpenSpec scenarios; generates mocks and fixtures; follows repo test conventions. | Edit `*`; `echo`, `cat`, `ls`, `pwd`; `openspec show/list`; subagent `repo-scout`, `diff-summarizer`; skill, read, glob, grep on `*` | Shell `*` (denied except read-only commands listed) | Subagent |
+| **@ux-designer** | Reviews UI/UX requirements; generates ASCII wireframes; specifies design tokens; component specs; accessibility checks. Never modifies code. | `echo`, `cat`, `ls`, `pwd`; `openspec show/list`; subagent `repo-scout`, `diff-summarizer`; skill, read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
+| **@repo-scout** | Scans repository stack, conventions, and commands; read-only report; no files written. | `ls`; `git rev-parse`, `git ls-files`; `rg`; `cat`; read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
+| **@diff-summarizer** | Produces terse, high-signal summary of git diffs; flags risk hotspots; no fixes, no style review. | Git read-only (`status`, `diff`, `log`); read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only git commands listed) | Subagent |
+
+Modes: **primary** = drives the change loop and may run read-only verification commands; **subagent** = dispatched by @architect with full context, independent session with no prior conversation history.
 
 ```mermaid
 flowchart LR
