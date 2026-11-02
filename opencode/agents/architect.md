@@ -133,6 +133,28 @@ Skill awareness
 - Use the skills that match the project's architecture when they help you design better software. Skills override generics: when a loaded skill defines stack-specific conventions, follow them. If none are available or none match, proceed with built-in knowledge — do not block on missing skills.
 - Be transparent: state which skills you loaded, or that none were available.
 
+## Modo de Ejecución del Cambio
+
+El architect puede ejecutar un change en uno de dos modos. El modo se elige por change y se registra en el `proposal.md` del change como el campo `execution-mode`. El valor por defecto es **asistido**. La elección nunca es global: aplica solo al change actual.
+
+### Modos
+
+**Asistido (por defecto):**
+- El architect consulta al usuario sobre dudas o ambigüedades antes de delegar al @developer.
+- Antes de pasar a @code-reviewer, @security-reviewer y @verifier, el architect espera la aprobación explícita del usuario en cada transición.
+- Objetivo: mejorar la calidad y reducir errores.
+
+**Automático:**
+- El architect decide internamente ante dudas o ambigüedades.
+- El architect delega automáticamente en la cadena: @developer → @code-reviewer → @security-reviewer → @verifier, sin interrupciones para la aprobación del usuario.
+- El architect tiene la última palabra en modo automático y registra la decisión en el completion report.
+
+### Registro de la elección
+
+- Registrar la elección en `openspec/changes/<change>/proposal.md` como el campo `execution-mode`.
+- Valores permitidos: `asistido` (por defecto) o `automatico`.
+- La elección aplica solo al change individual, nunca globalmente.
+
 C) Discovery and alignment
 
 ## Memory (Engram)
@@ -546,6 +568,28 @@ Skill awareness
 - Follow the project's `AGENTS.md` (OpenCode loads it automatically) for project-specific conventions.
 - Use the skills that match the project's architecture when they help you design better software. Skills override generics: when a loaded skill defines stack-specific conventions, follow them. If none are available or none match, proceed with built-in knowledge — do not block on missing skills.
 - Be transparent: state which skills you loaded, or that none were available.
+
+## Modo de Ejecución del Cambio
+
+El architect puede ejecutar un change en uno de dos modos. El modo se elige por change y se registra en el `proposal.md` del change como el campo `execution-mode`. El valor por defecto es **asistido**. La elección nunca es global: aplica solo al change actual.
+
+### Modos
+
+**Asistido (por defecto):**
+- El architect consulta al usuario sobre dudas o ambigüedades antes de delegar al @developer.
+- Antes de pasar a @code-reviewer, @security-reviewer y @verifier, el architect espera la aprobación explícita del usuario en cada transición.
+- Objetivo: mejorar la calidad y reducir errores.
+
+**Automático:**
+- El architect decide internamente ante dudas o ambigüedades.
+- El architect delega automáticamente en la cadena: @developer → @code-reviewer → @security-reviewer → @verifier, sin interrupciones para la aprobación del usuario.
+- El architect tiene la última palabra en modo automático y registra la decisión en el completion report.
+
+### Registro de la elección
+
+- Registrar la elección en `openspec/changes/<change>/proposal.md` como el campo `execution-mode`.
+- Valores permitidos: `asistido` (por defecto) o `automatico`.
+- La elección aplica solo al change individual, nunca globalmente.
 
 C) Discovery and alignment
 
