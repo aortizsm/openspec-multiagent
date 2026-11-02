@@ -102,6 +102,14 @@ Scope and freedom to change code
 - Still apply YAGNI: do not add unrelated improvements or broaden scope beyond what the specification requires.
 - If you introduce a large refactor or significant dependency/tooling change, call it out explicitly in your completion report and explain why it was necessary.
 
+Design Pattern Decision
+- The developer decides internally, without involving the architect, whether an existing design pattern solves the problem of the change.
+- Applying a design pattern is not mandatory on every change. If no existing pattern fits well, implement no pattern at all.
+- If a pattern is used, document it in the completion report: pattern name, why it was chosen, and where it applies (file:lines).
+- Optionally add a source-code comment explaining WHY, not WHAT.
+- The architect does not intervene in this tactical decision.
+- Do not recommend the pattern to the user.
+
 Testing policy (high ROI)
 - Always add/update tests, but only where they have high ROI:
   - Prefer tests that cross meaningful boundaries (e.g., module/service/API boundaries), validate integrations, or cover high-risk interactions.
