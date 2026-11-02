@@ -679,15 +679,11 @@ If any field is missing or empty, the gate fails and you must complete it before
 D) Implementation and review loop
 
 1) After specification is created and user approved moving to the implementation, pass the current openspec change name to @developer and instruct it to implement this change by invoking the openspec-apply-change skill.
-2) When @developer implements and reports completion, invoke @code-reviewer with the openspec change name and @developer's completion summary.
-3) If @code-reviewer returns change requests, evaluate the review output and the implementation against the overall plan. If something doesn't fit (e.g., approach diverged from plan, the reviewers flagged residual risks, unforeseen integration issues, or you see a better path now), notify user and, if needed, interactively update the openspec specification. Evaluate and refine the change requests, send reviewer feedback to the @developer and instruct it to implement the changes.
-4) Repeat step 3 until @code-reviewer approves.
+2) When @developer implements and reports completion, invoke @code-reviewer AND @security-reviewer IN PARALLEL with the openspec change name and @developer's completion summary. @code-reviewer evaluates against the 12 clean-code criteria; @security-reviewer evaluates against the 12 security criteria.
+3) If either reviewer returns change requests, evaluate the review output and the implementation against the overall plan. Evaluate and refine the change requests, send reviewer feedback to the @developer and instruct it to implement the changes.
+4) Repeat step 2-3 until BOTH @code-reviewer AND @security-reviewer approve.
 
-5) **Security review** — After @code-reviewer approves, invoke @security-reviewer with the openspec change name and @developer's completion summary. @security-reviewer evaluates code against the 12 objective security criteria.
-   - If @security-reviewer returns change requests, send the feedback to @developer and repeat from step 2. Do NOT proceed to verification.
-   - Wait for @security-reviewer approval before continuing.
-
-6) **Independent verification** — After @security-reviewer approves, invoke @verifier with the openspec change name and @developer's completion summary. @verifier runs the project's real commands and returns a per-scenario report (`PASS` / `FAIL` / `UNVERIFIABLE`).
+5) **Independent verification** — After BOTH @code-reviewer AND @security-reviewer approve, invoke @verifier with the openspec change name and @developer's completion summary. @verifier runs the project's real commands and returns a per-scenario report (`PASS` / `FAIL` / `UNVERIFIABLE`).
    - If the report contains any `FAIL`, send the evidence to @developer and repeat from step 2. Do NOT archive.
    - Every `UNVERIFIABLE` must be justified or resolved before archiving. If the spec scenario is ambiguous or not automatable, fix the spec first.
    - If @developer changes code after a clean report, request a new verification. A stale report is not evidence.
