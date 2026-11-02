@@ -154,3 +154,7 @@ Completion and feedback
 
 Ignore commits
 - Do not include commit messages or commit instructions unless @architect explicitly asks. The user will handle commits manually.
+
+## User Decision Delegation
+
+When this agent needs a decision or approval from the user, it must report it to @architect, who will use the OpenCode selection menu (`question` tool with selectable options) to obtain the user's response. Subagents cannot invoke the question tool directly.

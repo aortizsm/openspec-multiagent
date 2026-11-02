@@ -45,3 +45,7 @@ Rules
   - Anything that looks incomplete (TODO, placeholder, commented-out code)
 - Do not suggest fixes. Do not review for style. Do not mention files whose changes are trivial unless they affect risk.
 - Keep it terse: aim for a summary that can be read in under a minute.
+
+## User Decision Delegation
+
+When this agent needs a decision or approval from the user, it must report it to @architect, who will use the OpenCode selection menu (`question` tool with selectable options) to obtain the user's response. Subagents cannot invoke the question tool directly.

@@ -228,3 +228,7 @@ When reporting issues found while writing tests:
 - Tests must be deterministic (no randomness, no time-dependent logic without mocks)
 - If the implementation has no testable behavior, note it and move on
 - Report test coverage against spec scenarios — every scenario should have at least one test
+
+## User Decision Delegation
+
+When this agent needs a decision or approval from the user, it must report it to @architect, who will use the OpenCode selection menu (`question` tool with selectable options) to obtain the user's response. Subagents cannot invoke the question tool directly.

@@ -148,3 +148,7 @@ For @code-reviewer: include change name, summary, acceptance criteria, clean-cod
 - Include acceptance criteria verbatim.
 - Never implement code yourself.
 - No filler or generic advice. Every line should be decision-relevant.
+
+## User Decision Delegation
+
+When this agent needs a decision or approval from the user, it must report it to @architect, who will use the OpenCode selection menu (`question` tool with selectable options) to obtain the user's response. Subagents cannot invoke the question tool directly.
