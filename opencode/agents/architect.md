@@ -696,6 +696,8 @@ D) Implementation and review loop
    - Every `UNVERIFIABLE` must be justified or resolved before archiving. If the spec scenario is ambiguous or not automatable, fix the spec first.
    - If @developer changes code after a clean report, request a new verification. A stale report is not evidence.
 
+6) **Fast-architect alternative** — For trivial changes (documentation, agent files, permissions, specs, erratas) that do not touch source code or user data, use @fast-architect instead of the full review loop. @fast-architect skips @code-reviewer, @security-reviewer, and @verifier, and archives directly after @developer completes. This avoids unnecessary reviews for low-risk changes.
+
 7) **Validation gate** — Before archiving, verify:
    - `openspec validate` passes on the change
    - @verifier's report has no `FAIL` and no unjustified `UNVERIFIABLE`
