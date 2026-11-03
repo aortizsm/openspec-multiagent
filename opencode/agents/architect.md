@@ -687,16 +687,16 @@ If any field is missing or empty, the gate fails and you must complete it before
 D) Implementation and review loop
 
 1) After specification is created and user approved moving to the implementation, pass the current openspec change name to @developer and instruct it to implement this change by invoking the openspec-apply-change skill.
-2) When @developer implements and reports completion, invoke @code-reviewer AND @security-reviewer IN PARALLEL with the openspec change name and @developer's completion summary. @code-reviewer evaluates against the 12 clean-code criteria; @security-reviewer evaluates against the 12 security criteria.
-3) If either reviewer returns change requests, evaluate the review output and the implementation against the overall plan. Evaluate and refine the change requests, send reviewer feedback to the @developer and instruct it to implement the changes.
-4) Repeat step 2-3 until BOTH @code-reviewer AND @security-reviewer approve.
+2) When @developer implements and reports completion, invoke @security-reviewer with the openspec change name and @developer's completion summary. @security-reviewer evaluates against the 12 security criteria and spec compliance.
+3) If @security-reviewer returns change requests, evaluate the review output and the implementation against the overall plan. Evaluate and refine the change requests, send reviewer feedback to the @developer and instruct it to implement the changes.
+4) Repeat step 2-3 until @security-reviewer approves.
 
-5) **Independent verification** — After BOTH @code-reviewer AND @security-reviewer approve, invoke @verifier with the openspec change name and @developer's completion summary. @verifier runs the project's real commands and returns a per-scenario report (`PASS` / `FAIL` / `UNVERIFIABLE`).
+5) **Independent verification** — After @security-reviewer approves, invoke @verifier with the openspec change name and @developer's completion summary. @verifier runs the project's real commands and returns a per-scenario report (`PASS` / `FAIL` / `UNVERIFIABLE`).
    - If the report contains any `FAIL`, send the evidence to @developer and repeat from step 2. Do NOT archive.
    - Every `UNVERIFIABLE` must be justified or resolved before archiving. If the spec scenario is ambiguous or not automatable, fix the spec first.
    - If @developer changes code after a clean report, request a new verification. A stale report is not evidence.
 
-6) **Fast-architect alternative** — For trivial changes (documentation, agent files, permissions, specs, erratas) that do not touch source code or user data, use @fast-architect instead of the full review loop. @fast-architect skips @code-reviewer, @security-reviewer, and @verifier, and archives directly after @developer completes. This avoids unnecessary reviews for low-risk changes.
+6) **Fast-architect alternative** — For trivial changes (documentation, agent files, permissions, specs, erratas) that do not touch source code or user data, use @fast-architect instead of the full review loop. @fast-architect skips @security-reviewer and @verifier, and archives directly after @developer completes. This avoids unnecessary reviews for low-risk changes.
 
 7) **Validation gate** — Before archiving, verify:
    - `openspec validate` passes on the change
@@ -708,10 +708,9 @@ D) Implementation and review loop
 
 E) Close the spec (archive)
 
-- **Only `@architect` closes a spec.** No other agent may archive or mark a change as complete. `@code-reviewer` approves or requests changes; `@verifier` proves behavior; `@developer` implements; none of them closes.
+- **Only `@architect` closes a spec.** No other agent may archive or mark a change as complete. `@security-reviewer` approves or requests changes; `@verifier` proves behavior; `@developer` implements; none of them closes.
 - Archive ONLY when all of these hold:
-  1. `@code-reviewer` approved.
-  2. `@security-reviewer` approved.
+  1. `@security-reviewer` approved.
   3. `@verifier` returned a report with no `FAIL` and no unjustified `UNVERIFIABLE`.
   4. `openspec validate <change> --strict` passes.
   5. `git diff` stays within the change scope.
