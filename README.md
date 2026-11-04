@@ -68,21 +68,55 @@ flowchart LR
 
 ## Quick start
 
-Install and configure the workflow in your project:
+Set up the workflow in two places:
+
+1. **This repo** — the source of the workflow (scripts, agents, setup). Install and verify prerequisites here once.
+2. **Your target project** — where your code lives and where you run the workflow. Install the agents there.
+
+### Step 1: Install Node.js
+
+Install [Node.js](https://nodejs.org) version 20.19.0 or newer:
+
+```bash
+node --version   # must be >= 20.19.0
+```
+
+### Step 2: Clone or download this repo
+
+Get a copy of this repository:
+
+```bash
+git clone https://github.com/aortizsm/openspec-multiagent.git
+cd openspec-multiagent
+```
+
+### Step 3: Verify prerequisites
+
+From the repo root, run the setup wizard:
+
+```bash
+node scripts/setup.mjs
+```
+
+Equivalent, without referencing `scripts/` directly:
+
+```bash
+npm run setup
+```
+
+The wizard checks Node.js, installs the OpenSpec CLI, and configures the MCP servers and agent definitions.
+
+### Step 4: Initialize your target project
+
+In the project where you want to use the workflow — not in this repo — run:
 
 ```bash
 npx openspec-multiagent init
 ```
 
-Or from a clone:
+Then start OpenCode in that directory and describe your change to `@architect`. @architect turns it into an OpenSpec spec and the change loop begins.
 
-```bash
-git clone https://github.com/aortizsm/openspec-multiagent.git
-cd openspec-multiagent
-node scripts/setup.mjs
-```
-
-Then open OpenCode in your project and describe the change you want to make to `@architect`.
+Daily commands (`setup`, `check`, `test`, `install-agents`, `reinstall`, `reset` and more) are listed in the [npm scripts](#npm-scripts) section below.
 
 ## Memory (Engram)
 
