@@ -490,6 +490,61 @@ export function writeMcpEntry(serverName, entry) {
   return { target, existed };
 }
 
+// --- removal helpers -----------------------------------------------------------
+
+/**
+ * Remove all agent files (`.md`) from `dir`. Returns the number removed.
+ * Respects dry-run mode: only logs when `dryRun` is true, never deletes.
+ */
+export function removeAgentFiles(dir, { dryRun = false } = {}) {
+  const label = dryRun ? "[dry-run] " : "";
+  if (!existsSync(dir)) {
+    console.log(`${label}No agent files in ${dir}`);
+    return 0;
+  }
+  const agentFiles = readdirSync(dir).filter((f) => f.endsWith(".md"));
+  console.log(`${label}Removing ${agentFiles.length} agent files from ${dir}`);
+  if (!dryRun) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  return agentFiles.length;
+}
+
+/**
+ * Remove MCP server entries (`mcpNames`) from the config at `configPath`.
+ * Returns the number removed. Exits with an error on JSONC configs.
+ * Respects dry-run mode: only logs when `dryRun` is true, never writes.
+ */
+export function removeMcpEntries(configPath, mcpNames, { dryRun = false } = {}) {
+  const label = dryRun ? "[dry-run] " : "";
+  if (!existsSync(configPath)) {
+    console.log(`${label}No MCP config at ${configPath}`);
+    return 0;
+  }
+  const { data: configData, jsonc } = readJsonc(configPath);
+  if (jsonc) {
+    console.error(
+      `ERROR: ${configPath} contains JSON comments. Cannot remove MCP entries automatically.\n` +
+      `       Please remove the entries manually.`
+    );
+    process.exit(1);
+  }
+
+  let removed = 0;
+  for (const mcpName of mcpNames) {
+    if (configData.mcp?.servers?.[mcpName]) {
+      delete configData.mcp.servers[mcpName];
+      removed += 1;
+      console.log(`${label}Removing MCP entry: ${mcpName}`);
+    }
+  }
+
+  if (removed > 0 && !dryRun) {
+    writeConfig(configPath, configData);
+  }
+  return removed;
+}
+
 // --- OpenSpec CLI resolution ---------------------------------------------------
 /**
  * Resolve how to invoke the OpenSpec CLI.

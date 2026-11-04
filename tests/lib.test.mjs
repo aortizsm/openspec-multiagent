@@ -4,6 +4,15 @@
 
 import assert from "node:assert";
 import { EventEmitter } from "node:events";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 import {
   ask,
@@ -12,6 +21,9 @@ import {
   closePrompts,
   isInteractive,
   readInput,
+  removeAgentFiles,
+  removeMcpEntries,
+  readJsonc,
 } from "../scripts/lib.mjs";
 
 import { contextBundle } from "../scripts/context-bundle.mjs";
@@ -341,6 +353,129 @@ function stdoutStream({ tty = false } = {}) {
 
   await testAsync("closePrompts does not throw", () => {
     closePrompts();
+  });
+
+  // ------------------------------------------------------------------
+  // removeAgentFiles (lib.mjs)
+  // ------------------------------------------------------------------
+  await testAsync("removeAgentFiles removes .md files and returns the count", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "osm-agents-"));
+    writeFileSync(join(dir, "developer.md"), "# developer");
+    writeFileSync(join(dir, "architect.md"), "# architect");
+    try {
+      const removed = removeAgentFiles(dir);
+      assert.strictEqual(removed, 2, "should remove exactly the .md files");
+      assert.ok(!existsSync(dir), "agent directory must be removed entirely");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("removeAgentFiles dry-run does not delete files", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "osm-agents-dry-"));
+    writeFileSync(join(dir, "developer.md"), "# developer");
+    try {
+      const removed = removeAgentFiles(dir, { dryRun: true });
+      assert.strictEqual(removed, 1, "dry-run reports the would-be count");
+      assert.ok(existsSync(join(dir, "developer.md")), "dry-run must not delete");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("removeAgentFiles returns 0 for missing dir", async () => {
+    const missing = join(tmpdir(), "osm-agents-missing-" + Date.now());
+    const removed = removeAgentFiles(missing);
+    assert.strictEqual(removed, 0, "missing dir returns 0");
+  });
+
+  // ------------------------------------------------------------------
+  // removeMcpEntries (lib.mjs)
+  // ------------------------------------------------------------------
+  await testAsync("removeMcpEntries removes listed MCP entries and returns count", async () => {
+    const home = mkdtempSync(join(tmpdir(), "osm-mcp-home-"));
+    const prev = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = home;
+    try {
+      const configPath = join(home, "opencode.json");
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          mcp: {
+            servers: {
+              openspec: { type: "local", command: ["openspec-mcp"] },
+              context7: { type: "remote", url: "https://mcp.context7.com/mcp" },
+              engram: { type: "local", command: ["engram", "mcp"] },
+              other: { type: "local", command: ["other"] },
+            },
+          },
+        }, null, 2),
+      );
+      const removed = removeMcpEntries(configPath, ["openspec", "engram"]);
+      assert.strictEqual(removed, 2, "should remove the two listed entries");
+      const { data: configData } = readJsonc(configPath);
+      assert.ok(!configData.mcp.servers.openspec, "openspec entry removed");
+      assert.ok(!configData.mcp.servers.engram, "engram entry removed");
+      assert.ok(configData.mcp.servers.context7, "context7 entry kept");
+      assert.ok(configData.mcp.servers.other, "other entry kept");
+    } finally {
+      process.env.XDG_CONFIG_HOME = prev;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("removeMcpEntries dry-run does not write the config", async () => {
+    const home = mkdtempSync(join(tmpdir(), "osm-mcp-dry-"));
+    const prev = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = home;
+    try {
+      const configPath = join(home, "opencode.json");
+      const original = JSON.stringify({
+        mcp: { servers: { openspec: { type: "local", command: ["openspec-mcp"] } } },
+      });
+      writeFileSync(configPath, original);
+      const removed = removeMcpEntries(configPath, ["openspec"], { dryRun: true });
+      assert.strictEqual(removed, 1, "dry-run reports the would-be count");
+      const current = readFileSync(configPath, "utf8");
+      assert.strictEqual(current, original, "dry-run must not modify the file");
+    } finally {
+      process.env.XDG_CONFIG_HOME = prev;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  await testAsync("removeMcpEntries returns 0 for missing config", async () => {
+    const missing = join(tmpdir(), "osm-mcp-missing-" + Date.now(), "opencode.json");
+    const removed = removeMcpEntries(missing, ["openspec"]);
+    assert.strictEqual(removed, 0, "missing config returns 0");
+  });
+
+  await testAsync("removeMcpEntries exits 1 on JSONC config", async () => {
+    const home = mkdtempSync(join(tmpdir(), "osm-mcp-jsonc-"));
+    const prev = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = home;
+    const originalExit = process.exit;
+    let exited = false;
+    process.exit = (code) => {
+      exited = true;
+      throw new Error(`process.exit(${code})`);
+    };
+    try {
+      const configPath = join(home, "opencode.jsonc");
+      writeFileSync(configPath, "// comment\n{}\n");
+      let threw = false;
+      try {
+        removeMcpEntries(configPath, ["openspec"]);
+      } catch {
+        threw = true;
+      }
+      assert.strictEqual(threw, true, "removeMcpEntries did not throw on JSONC");
+      assert.strictEqual(exited, true, "process.exit was called");
+    } finally {
+      process.exit = originalExit;
+      process.env.XDG_CONFIG_HOME = prev;
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   // ------------------------------------------------------------------

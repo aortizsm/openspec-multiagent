@@ -9,7 +9,7 @@
 //   node scripts/reinstall.mjs --dry-run    # show what would be done
 //   node scripts/reinstall.mjs --help       # show this help
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   AGENTS_SRC_DIR,
@@ -18,6 +18,8 @@ import {
   opencodeConfigDir,
   parseArgs,
   readJsonc,
+  removeAgentFiles,
+  removeMcpEntries,
   writeConfig,
 } from "./lib.mjs";
 
@@ -40,48 +42,12 @@ const DRY_RUN_LABEL = DRY_RUN ? "[dry-run] " : "";
 
 // --- Step 1: Remove existing agent files ---------------------------------------
 const agentDir = agentsDir();
-let removedAgents = 0;
-
-if (existsSync(agentDir)) {
-  const agentFiles = readdirSync(agentDir).filter((f) => f.endsWith(".md"));
-  removedAgents = agentFiles.length;
-  console.log(`${DRY_RUN_LABEL}Removing ${removedAgents} agent files from ${agentDir}`);
-  if (!DRY_RUN) {
-    rmSync(agentDir, { recursive: true, force: true });
-  }
-} else {
-  console.log(`${DRY_RUN_LABEL}No existing agent files to remove`);
-}
+const removedAgents = removeAgentFiles(agentDir, { dryRun: DRY_RUN });
 
 // --- Step 2: Remove existing MCP entries ---------------------------------------
 const mcpNames = ["openspec", "context7", "engram", "codegraph"];
-const removedMcp = [];
 const configPath = mcpConfigFile();
-
-if (existsSync(configPath)) {
-  const { data, jsonc } = readJsonc(configPath);
-  if (jsonc) {
-    console.error(
-      `ERROR: ${configPath} contains JSON comments. Cannot remove MCP entries automatically.\n` +
-      `       Please remove the entries manually.`
-    );
-    process.exit(1);
-  }
-
-  for (const mcpName of mcpNames) {
-    if (data.mcp?.servers?.[mcpName]) {
-      delete data.mcp.servers[mcpName];
-      removedMcp.push(mcpName);
-      console.log(`${DRY_RUN_LABEL}Removing MCP entry: ${mcpName}`);
-    }
-  }
-
-  if (removedMcp.length > 0 && !DRY_RUN) {
-    writeConfig(configPath, data);
-  }
-} else {
-  console.log(`${DRY_RUN_LABEL}No MCP config found at ${configPath}`);
-}
+const removedMcp = removeMcpEntries(configPath, mcpNames, { dryRun: DRY_RUN });
 
 // --- Step 3: Reinstall agents --------------------------------------------------
 if (!existsSync(AGENTS_SRC_DIR)) {
@@ -130,8 +96,7 @@ if (!DRY_RUN) {
 
   let configData = {};
   if (existsSync(configPath)) {
-    const { data } = readJsonc(configPath);
-    configData = data;
+    configData = readJsonc(configPath).data;
   }
 
   configData.mcp ??= {};
@@ -149,7 +114,7 @@ console.log("");
 console.log("=== Reinstall Summary ===");
 console.log(`Agents removed:  ${removedAgents}`);
 console.log(`Agents installed: ${agentFiles.length}`);
-console.log(`MCP entries removed: ${removedMcp.length}`);
+console.log(`MCP entries removed: ${removedMcp}`);
 console.log(`MCP entries configured: ${mcpNames.length}`);
 console.log("");
 console.log("Restart OpenCode (or start a new session) to pick up the changes.");

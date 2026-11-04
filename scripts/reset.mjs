@@ -15,8 +15,8 @@ import {
   agentsDir,
   opencodeConfigDir,
   parseArgs,
-  readJsonc,
-  writeConfig,
+  removeAgentFiles,
+  removeMcpEntries,
 } from "./lib.mjs";
 
 const { flags } = parseArgs(process.argv.slice(2));
@@ -47,47 +47,17 @@ const removedItems = [];
 
 // --- Step 1: Remove agent files from user-level directory ----------------------
 const agentDir = agentsDir();
-
-if (existsSync(agentDir)) {
-  const agentFiles = readdirSync(agentDir).filter((f) => f.endsWith(".md"));
-  removedItems.push(`${agentFiles.length} agent files from ${agentDir}`);
-  console.log(`${DRY_RUN_LABEL}Removing ${agentFiles.length} agent files from ${agentDir}`);
-  if (!DRY_RUN) {
-    rmSync(agentDir, { recursive: true, force: true });
-  }
-} else {
-  console.log(`${DRY_RUN_LABEL}No agent files in ${agentDir}`);
+const agentCount = removeAgentFiles(agentDir, { dryRun: DRY_RUN });
+if (agentCount > 0) {
+  removedItems.push(`${agentCount} agent files from ${agentDir}`);
 }
 
 // --- Step 2: Remove MCP entries from user config --------------------------------
 const configPath = join(opencodeConfigDir(), "opencode.json");
 const mcpNames = ["openspec", "context7", "engram", "codegraph"];
-let removedMcpCount = 0;
-
-if (existsSync(configPath)) {
-  const { data, jsonc } = readJsonc(configPath);
-  if (jsonc) {
-    console.error(
-      `ERROR: ${configPath} contains JSON comments. Cannot remove MCP entries automatically.\n` +
-      `       Please remove the entries manually.`
-    );
-    process.exit(1);
-  }
-
-  for (const mcpName of mcpNames) {
-    if (data.mcp?.servers?.[mcpName]) {
-      delete data.mcp.servers[mcpName];
-      removedMcpCount += 1;
-      removedItems.push(`MCP entry: ${mcpName}`);
-      console.log(`${DRY_RUN_LABEL}Removing MCP entry: ${mcpName}`);
-    }
-  }
-
-  if (removedMcpCount > 0 && !DRY_RUN) {
-    writeConfig(configPath, data);
-  }
-} else {
-  console.log(`${DRY_RUN_LABEL}No MCP config at ${configPath}`);
+const removedMcpCount = removeMcpEntries(configPath, mcpNames, { dryRun: DRY_RUN });
+if (removedMcpCount > 0) {
+  removedItems.push(`${removedMcpCount} MCP entries`);
 }
 
 // --- Step 3: Remove .opencode/agents in current directory -----------------------

@@ -9,10 +9,12 @@ import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import {
   mkdtempSync,
+  mkdirSync,
   rmSync,
   readdirSync,
   existsSync,
   readFileSync,
+  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -49,9 +51,10 @@ function test(name, fn) {
   }
 }
 
-function run(script, args = [], env = {}) {
+function run(script, args = [], env = {}, cwd) {
   return spawnSync("node", [join(SCRIPTS, script), ...args], {
     env: { ...process.env, ...env },
+    cwd,
     encoding: "utf8",
   });
 }
@@ -333,6 +336,184 @@ test("check.mjs --json does not report a git MCP server", () => {
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 10. reinstall.mjs / reset.mjs / install-agents.mjs
+// ---------------------------------------------------------------------------
+
+function withTempConfigHome(fn) {
+  const home = mkdtempSync(join(tmpdir(), "osm-config-home-"));
+  const prev = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = home;
+  try {
+    return fn(home);
+  } finally {
+    process.env.XDG_CONFIG_HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+test("reinstall.mjs --help exits 0", () => {
+  const r = run("reinstall.mjs", ["--help"]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes("reinstall.mjs - Reinstall agents"));
+});
+
+test("reinstall.mjs --dry-run exits 0 and does not modify anything", () => {
+  withTempConfigHome(() => {
+    const r = run("reinstall.mjs", ["--dry-run"]);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(
+      !existsSync(join(process.env.XDG_CONFIG_HOME, "opencode", "agents")),
+      "dry-run must not create agents dir"
+    );
+    assert.ok(
+      !existsSync(join(process.env.XDG_CONFIG_HOME, "opencode", "opencode.json")),
+      "dry-run must not write config"
+    );
+  });
+});
+
+test("reset.mjs --help exits 0", () => {
+  const r = run("reset.mjs", ["--help"]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes("reset.mjs - Remove ALL multi-agent setup"));
+});
+
+test("reset.mjs --dry-run exits 0 and does not modify anything", () => {
+  withTempConfigHome(() => {
+    const r = run("reset.mjs", ["--dry-run"]);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.ok(
+      !existsSync(join(process.env.XDG_CONFIG_HOME, "opencode", "opencode.json")),
+      "dry-run must not write config"
+    );
+  });
+});
+
+test("reset.mjs without --confirm exits non-zero", () => {
+  withTempConfigHome(() => {
+    const r = run("reset.mjs", []);
+    assert.strictEqual(r.status, 1, "reset without --confirm must exit non-zero");
+    assert.ok(r.stderr.includes("requires --confirm"), "should mention --confirm");
+  });
+});
+
+test("install-agents.mjs --force overwrites existing agent files", () => {
+  withTempConfigHome(() => {
+    const target = join(process.env.XDG_CONFIG_HOME, "opencode", "agents");
+    mkdirSync(target, { recursive: true });
+    const agent = "developer.md";
+    writeFileSync(join(target, agent), "OLD CONTENT\n");
+    const r = run("install-agents.mjs", ["--force"]);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const current = readFileSync(join(target, agent), "utf8");
+    assert.ok(!current.includes("OLD CONTENT"), "--force must replace existing content");
+    assert.ok(current.includes("description:"), "source agent content must be present");
+  });
+});
+
+test("install-agents.mjs without --force skips existing agent files", () => {
+  withTempConfigHome(() => {
+    const target = join(process.env.XDG_CONFIG_HOME, "opencode", "agents");
+    mkdirSync(target, { recursive: true });
+    const agent = "developer.md";
+    writeFileSync(join(target, agent), "OLD CONTENT\n");
+    const r = run("install-agents.mjs", []);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const current = readFileSync(join(target, agent), "utf8");
+    assert.strictEqual(
+      current,
+      "OLD CONTENT\n",
+      "existing file must be skipped without --force"
+    );
+    assert.ok(r.stdout.includes("skipped"), "should report skipped files");
+  });
+});
+
+test("reinstall non-dry-run overwrites agent files and reconfigures MCP servers", () => {
+  withTempConfigHome(() => {
+    const r = run("reinstall.mjs", []);
+    assert.strictEqual(r.status, 0, r.stderr);
+
+    const agentDir = join(process.env.XDG_CONFIG_HOME, "opencode", "agents");
+    const agentFiles = readdirSync(agentDir).filter((f) => f.endsWith(".md"));
+    assert.ok(agentFiles.length > 0, "agent files must be copied to target dir");
+    assert.ok(
+      existsSync(join(agentDir, "developer.md")),
+      "developer.md must be copied to target dir"
+    );
+
+    const configPath = join(process.env.XDG_CONFIG_HOME, "opencode", "opencode.json");
+    const { data: configData } = readJsonc(configPath);
+    assert.ok(configData.mcp.servers.openspec, "openspec MCP entry present");
+    assert.ok(configData.mcp.servers.context7, "context7 MCP entry present");
+    assert.ok(configData.mcp.servers.engram, "engram MCP entry present");
+    assert.ok(configData.mcp.servers.codegraph, "codegraph MCP entry present");
+  });
+});
+
+test("reset --confirm removes agent files, MCP entries and local .opencode/agents", () => {
+  withTempConfigHome(() => {
+    // Build a fresh state: copy agents into XDG config dir and write MCP entries
+    const agentDir = join(process.env.XDG_CONFIG_HOME, "opencode", "agents");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, "developer.md"), "# developer\n");
+    writeFileSync(join(agentDir, "architect.md"), "# architect\n");
+
+    const configPath = join(process.env.XDG_CONFIG_HOME, "opencode", "opencode.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          mcp: {
+            servers: {
+              openspec: { type: "local", command: ["openspec-mcp"] },
+              context7: { type: "remote", url: "https://mcp.context7.com/mcp" },
+              engram: { type: "local", command: ["engram", "mcp"] },
+              codegraph: { type: "local", command: ["codegraph", "mcp"] },
+            },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    // Run reset in a temp cwd so local .opencode/agents is not the repo dir
+    const tmpCwd = mkdtempSync(join(tmpdir(), "osm-reset-cwd-"));
+    try {
+      const localAgents = join(tmpCwd, ".opencode", "agents");
+      mkdirSync(localAgents, { recursive: true });
+      writeFileSync(join(localAgents, "developer.md"), "# developer\n");
+
+      const r = run("reset.mjs", ["--confirm"], {}, tmpCwd);
+      assert.strictEqual(r.status, 0, r.stderr);
+
+      // Agent files removed from XDG config dir
+      assert.ok(
+        !existsSync(join(agentDir, "developer.md")),
+        "XDG agent file must be removed"
+      );
+      assert.ok(
+        !existsSync(join(agentDir, "architect.md")),
+        "XDG architect.md must be removed"
+      );
+
+      // MCP entries removed from config
+      const { data: configData } = readJsonc(configPath);
+      assert.ok(!configData.mcp.servers.openspec, "openspec entry removed");
+      assert.ok(!configData.mcp.servers.context7, "context7 entry removed");
+      assert.ok(!configData.mcp.servers.engram, "engram entry removed");
+      assert.ok(!configData.mcp.servers.codegraph, "codegraph entry removed");
+
+      // Local .opencode/agents removed cleanly
+      assert.ok(!existsSync(localAgents), "local .opencode/agents must be removed");
+    } finally {
+      rmSync(tmpCwd, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
