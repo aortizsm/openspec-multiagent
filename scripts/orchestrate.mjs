@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { saveCheckpoint, rollbackToCheckpoint } from './rollback.mjs';
@@ -100,6 +100,40 @@ function runAgent(agent, changeName) {
   console.log(`✅ ${agent} completed successfully`);
 }
 
+function spawnAgent(agent, changeName) {
+  console.log(`\n=== Running ${agent} for change "${changeName}" ===`);
+  return spawn(
+    'npx',
+    ['opencode', 'run', '-a', agent, '--', changeName],
+    {
+      cwd: PROJECT_ROOT,
+      env: { ...process.env, OPENCODE_NON_INTERACTIVE: '1' },
+      stdio: 'inherit',
+    }
+  );
+}
+
+function waitForAgent(child, agent, changeName) {
+  return new Promise((resolve, reject) => {
+    child.on('close', (code) => {
+      if (code !== 0) {
+        const resumeCmd = `node scripts/orchestrate.mjs ${changeName} --from ${agent}`;
+        console.error(`\n❌ Agent "${agent}" failed with exit code ${code}\nResume with: ${resumeCmd}`);
+        reject(new Error(`Agent "${agent}" failed with exit code ${code}`));
+        return;
+      }
+      console.log(`✅ ${agent} completed successfully`);
+      resolve();
+    });
+    child.on('error', reject);
+  });
+}
+
+function runAgentAsync(agent, changeName) {
+  const child = spawnAgent(agent, changeName);
+  return waitForAgent(child, agent, changeName);
+}
+
 function runOpenspecValidate(changeName) {
   console.log(`\n=== Running openspec validate ===`);
   const validateResult = runCommand('npx', ['openspec', 'validate', changeName]);
@@ -124,7 +158,7 @@ function runOpenspecArchive(changeName) {
   console.log(`✅ openspec archive completed`);
 }
 
-function main() {
+async function main() {
   const { changeName, fromAgent, dryRun } = parseArgs();
 
   validateChangeName(changeName);
@@ -146,7 +180,7 @@ function main() {
     console.log(`Resuming from: ${fromAgent}`);
   }
 
-  runAgents(agentsToRun, changeName);
+  await runAgents(agentsToRun, changeName);
   runPostSteps(changeName);
 }
 
@@ -166,15 +200,50 @@ function runDryRun(changeName, fromAgent, startIndex) {
   console.log('\nDry run complete. Run without --dry-run to execute.');
 }
 
-function runAgents(agentsToRun, changeName) {
-  for (const agent of agentsToRun) {
-    try {
-      saveCheckpoint(agent);
-      runAgent(agent, changeName);
-    } catch (error) {
-      rollbackToCheckpoint();
-      process.exit(1);
+async function runAgents(agentsToRun, changeName) {
+  let index = 0;
+  while (index < agentsToRun.length) {
+    const agent = agentsToRun[index];
+
+    if (isReviewerGroupStart(agentsToRun, index)) {
+      await runParallelReviewers(agentsToRun, index, changeName);
+      index += 2;
+      continue;
     }
+
+    await runSequentialAgent(agent, changeName);
+    index += 1;
+  }
+}
+
+function isReviewerGroupStart(agentsToRun, index) {
+  return (
+    agentsToRun[index] === 'code-reviewer' &&
+    agentsToRun[index + 1] === 'security-reviewer'
+  );
+}
+
+async function runParallelReviewers(agentsToRun, index, changeName) {
+  saveCheckpoint(agentsToRun[index]);
+  saveCheckpoint(agentsToRun[index + 1]);
+  try {
+    await Promise.all([
+      runAgentAsync(agentsToRun[index], changeName),
+      runAgentAsync(agentsToRun[index + 1], changeName),
+    ]);
+  } catch (error) {
+    rollbackToCheckpoint();
+    process.exit(1);
+  }
+}
+
+async function runSequentialAgent(agent, changeName) {
+  try {
+    saveCheckpoint(agent);
+    runAgent(agent, changeName);
+  } catch (error) {
+    rollbackToCheckpoint();
+    process.exit(1);
   }
 }
 
