@@ -16,7 +16,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
@@ -30,6 +30,11 @@ import {
   versionAtLeast,
   writeMcpEntry,
 } from "../scripts/lib.mjs";
+
+import {
+  designGate,
+  validateProposalSections,
+} from "../scripts/orchestrate.mjs";
 
 // Namespace import used to assert Zen symbols are no longer exported.
 import * as lib from "../scripts/lib.mjs";
@@ -589,6 +594,188 @@ test("CHANGELOG.md: no zen-model-selection entry", () => {
     !/\[2026-10-26\] zen-model-selection\*\*/m.test(changelog),
     "CHANGELOG.md must not reference the old zen-model-selection entry"
   );
+});
+
+// ---------------------------------------------------------------------------
+// 11. designGate / validateProposalSections (orchestrate.mjs)
+// ---------------------------------------------------------------------------
+
+const DG_CHANGES_DIR = join(process.cwd(), "openspec", "changes");
+const DG_CHANGE_NAME = "dg-test-change";
+
+function makeDgChange(extraFiles = {}, configOverride = null) {
+  const changeDir = join(DG_CHANGES_DIR, DG_CHANGE_NAME);
+  rmSync(changeDir, { recursive: true, force: true });
+  mkdirSync(changeDir, { recursive: true });
+
+  writeFileSync(join(changeDir, "proposal.md"), `# Proposal\n\n## Intent\n## Why\n## What Changes\n`);
+  writeFileSync(
+    join(changeDir, "design.md"),
+    `# Design\n\n## status\n## executive_summary\n## artifacts\n## risks\n## next_recommended\n`
+  );
+  writeFileSync(join(changeDir, "tasks.md"), `# Tasks\n\n- [ ] do it\n`);
+
+  for (const [fileName, content] of Object.entries(extraFiles)) {
+    const filePath = join(changeDir, fileName);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, content);
+  }
+
+  if (configOverride !== null) {
+    writeFileSync(join(changeDir, ".openspec.yaml"), configOverride);
+  } else {
+    writeFileSync(join(changeDir, ".openspec.yaml"), "schema: spec-driven\n");
+  }
+
+  return changeDir;
+}
+
+function cleanupDgChange() {
+  rmSync(join(DG_CHANGES_DIR, DG_CHANGE_NAME), { recursive: true, force: true });
+}
+
+test("designGate: blocks when change directory does not exist", () => {
+  cleanupDgChange();
+  assert.throws(
+    () => designGate(DG_CHANGE_NAME),
+    /Design gate failed: change directory.*does not exist/
+  );
+});
+
+test("designGate: blocks when proposal.md is missing", () => {
+  const changeDir = makeDgChange();
+  try {
+    rmSync(join(changeDir, "proposal.md"), { force: true });
+    assert.throws(
+      () => designGate(DG_CHANGE_NAME),
+      /Design gate failed: required file.*proposal.md.*is missing/
+    );
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("designGate: blocks when design.md is missing", () => {
+  const changeDir = makeDgChange();
+  try {
+    rmSync(join(changeDir, "design.md"), { force: true });
+    assert.throws(
+      () => designGate(DG_CHANGE_NAME),
+      /Design gate failed: required file.*design.md.*is missing/
+    );
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("designGate: blocks when tasks.md is missing", () => {
+  const changeDir = makeDgChange();
+  try {
+    rmSync(join(changeDir, "tasks.md"), { force: true });
+    assert.throws(
+      () => designGate(DG_CHANGE_NAME),
+      /Design gate failed: required file.*tasks.md.*is missing/
+    );
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("designGate: blocks when no spec files exist (skip_specs not set)", () => {
+  const changeDir = makeDgChange();
+  try {
+    assert.throws(
+      () => designGate(DG_CHANGE_NAME),
+      /Design gate failed: no spec files found/
+    );
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("designGate: bypasses spec check when skip_specs: true", () => {
+  const changeDir = makeDgChange(
+    {},
+    "schema: spec-driven\nskip_specs: true\n"
+  );
+  try {
+    assert.doesNotThrow(() => designGate(DG_CHANGE_NAME));
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("designGate: blocks when design.md missing required field", () => {
+  const changeDir = makeDgChange(
+    { "specs/foo/spec.md": "# Spec\n" }
+  );
+  try {
+    writeFileSync(
+      join(changeDir, "design.md"),
+      `# Design\n\n## status\n## executive_summary\n## artifacts\n## risks\n`
+    );
+    assert.throws(
+      () => designGate(DG_CHANGE_NAME),
+      /Design gate failed: design.md is missing required field "## next_recommended"/
+    );
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("designGate: blocks when proposal.md missing required section", () => {
+  const changeDir = makeDgChange(
+    { "specs/foo/spec.md": "# Spec\n" }
+  );
+  try {
+    writeFileSync(
+      join(changeDir, "proposal.md"),
+      `# Proposal\n\n## Intent\n## Why\n`
+    );
+    assert.throws(
+      () => designGate(DG_CHANGE_NAME),
+      /Design gate failed: proposal.md is missing required section "## What Changes"/
+    );
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("designGate: passes for a complete change with skip_specs: true", () => {
+  const changeDir = makeDgChange(
+    { "specs/foo/spec.md": "# Spec\n" },
+    "schema: spec-driven\nskip_specs: true\n"
+  );
+  try {
+    assert.doesNotThrow(() => designGate(DG_CHANGE_NAME));
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("validateProposalSections: blocks when section missing", () => {
+  const changeDir = makeDgChange();
+  try {
+    writeFileSync(
+      join(changeDir, "proposal.md"),
+      `# Proposal\n\n## Intent\n## Why\n`
+    );
+    assert.throws(
+      () => validateProposalSections(changeDir),
+      /proposal.md is missing required section "## What Changes"/
+    );
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+test("validateProposalSections: passes when all sections present", () => {
+  const changeDir = makeDgChange();
+  try {
+    assert.doesNotThrow(() => validateProposalSections(changeDir));
+  } finally {
+    cleanupDgChange();
+  }
 });
 
 // ---------------------------------------------------------------------------

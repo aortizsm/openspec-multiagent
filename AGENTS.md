@@ -94,7 +94,7 @@ Si algun check falla, el architect envia al developer a corregir antes de reinte
 
 ## Orden del loop
 
-`@test-engineer`, `@code-reviewer` y `@security-reviewer` se ejecutan en **paralelo** después de `@developer` (son independientes entre sí). `@verifier` ejecuta después de que los tres completen, y `@architect` archiva al final.
+El usuario aprueba el diseño una sola vez, antes de que cualquier agente ejecute. Después de esa aprobación, el architect ejecuta el loop completo automáticamente, sin `question` intermedios:
 
 ```
 @developer  →  [@test-engineer  +  @code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
@@ -108,16 +108,21 @@ Si el cambio incluye UI/UX, se inserta `@ux-designer` antes de `@developer`:
 
 Si cualquiera de los tres agentes paralelos devuelve cambios, `@developer` corrige y todos vuelven a revisar solo lo tocado.
 
-### Pre-flight validation
+### Design gate
 
-Antes de delegar cualquier agente, el orquestrador ejecuta `preFlightValidation(changeName)` al inicio de `main()`. Valida que:
+Antes de ejecutar cualquier agente, el orquestrador ejecuta `designGate(changeName)` al inicio de `main()`. Valida que el diseño está completo:
 
 1. El directorio `openspec/changes/<changeName>/` exista.
 2. Existan `proposal.md`, `design.md` y `tasks.md`.
-3. Exista al menos un `spec.md` en `openspec/changes/<changeName>/specs/`.
+3. Exista al menos un `spec.md` en `openspec/changes/<changeName>/specs/` (salvo `skip_specs: true` en `.openspec.yaml`).
 4. El `design.md` contenga los 5 campos obligatorios: `status`, `executive_summary`, `artifacts`, `risks`, `next_recommended`.
+5. El `proposal.md` contenga las secciones `## Intent`, `## Why` y `## What Changes`.
 
-Si falta algo, el orquestrador se detiene con un mensaje claro indicando qué falta, sin ejecutar ningún agente.
+Si falta algo, el orquestrador detiene la ejecución con un mensaje claro indicando qué falta, sin ejecutar ningún agente.
+
+### Pre-flight validation (design gate)
+
+La validación previa ahora se ejecuta a través de `designGate(changeName)` (ver sección "Design gate"). Valida que el diseño esté completo antes de delegar cualquier agente: directorio del change, archivos `proposal.md`/`design.md`/`tasks.md`, al menos un `spec.md`, los 5 campos obligatorios de `design.md` y las secciones `## Intent`, `## Why`, `## What Changes` de `proposal.md`. Si falta algo, el orquestrador se detiene con un mensaje claro sin ejecutar ningún agente.
 
 ### Circuit breaker
 
@@ -139,13 +144,18 @@ Antes de ejecutar cada agente, el orquestrador llama a `injectContextBundle(chan
 
 ## Explicación de solución antes de implementar
 
-Antes de delegar cualquier implementación al @developer, el @architect debe:
+El architect presenta el diseño (proposal.md, design.md, tasks.md) y el usuario lo aprueba una sola vez, antes de que cualquier agente ejecute. No se usa `question` para aprobar cada paso del loop.
 
 1. **Explicar el plan de solución** — qué archivos se modificarán, qué cambios se harán y por qué, basado en proposal.md, design.md y tasks.md del change.
-2. **Obtener aprobación explícita del usuario** — el usuario debe confirmar que el plan es correcto antes de que se escriba código.
-3. **Solo entonces proceder** — crear los artifacts restantes o delegar la implementación.
+2. **Obtener una sola aprobación del usuario** sobre el diseño, antes de iniciar la implementación.
+3. **Ejecutar automáticamente** — tras la aprobación del diseño, el architect ejecuta el loop completo sin aprobaciones intermedias.
 
-Esto evita que el desarrolador implemente algo que el usuario no haya aprobado conceptualmente.
+Si algo falla (revisor CRITICAL, verifier FAIL, error de validate), el architect detiene la ejecución y notifica al usuario con la evidencia, sin pedir aprobación para reintentar.
+
+### Revisores y conformidad al diseño
+
+- `code-reviewer` recibe `design.md` y `proposal.md` como referencia. Marca como CRITICAL solo lo que se desvíe del diseño aprobado o sea un bug claro. Los problemas de calidad no cubiertos por el diseño se marcan como SUGGESTION, no como CRITICAL.
+- `security-reviewer` evalúa los 12 criterios de seguridad independientemente (estos son no negociables).
 
 ## Pre-review gate
 

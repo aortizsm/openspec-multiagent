@@ -213,7 +213,7 @@ async function runAgentAsyncWithRetry(agent, changeName) {
 
 function runOpenspecValidate(changeName) {
   console.log(`\n=== Running openspec validate ===`);
-  const validateResult = runCommand('npx', ['openspec', 'validate', changeName]);
+  const validateResult = runCommand('npx', ['openspec', 'validate', changeName, '--strict']);
   
   if (validateResult.status !== 0) {
     console.error(`\n❌ openspec validate failed with exit code ${validateResult.status}`);
@@ -251,36 +251,58 @@ function loadOpenSpecConfig(changeName) {
   return config;
 }
 
-function preFlightValidation(changeName) {
+function designGate(changeName) {
   const changeDir = join(CHANGES_DIR, changeName);
   const openSpecConfig = loadOpenSpecConfig(changeName);
   const skipSpecs = openSpecConfig.skip_specs === 'true';
 
+  // 1. El directorio del change debe existir.
   if (!existsSync(changeDir)) {
     throw new Error(
-      `Pre-flight validation failed: change directory "${changeDir}" does not exist. Create the change before running the orchestrator.`
+      `Design gate failed: change directory "${changeDir}" does not exist. Create the change before running the orchestrator.`
     );
   }
 
+  // 2. proposal.md, design.md y tasks.md deben existir.
   for (const fileName of CONTEXT_FILES) {
     const filePath = join(changeDir, fileName);
     if (!existsSync(filePath)) {
       throw new Error(
-        `Pre-flight validation failed: required file "${filePath}" is missing.`
+        `Design gate failed: required file "${filePath}" is missing.`
       );
     }
   }
 
+  // 3. Al menos un spec en specs/*/spec.md (salvo skip_specs: true).
   if (!skipSpecs) {
     const hasSpec = findSpecMarkdownFiles(join(changeDir, 'specs')).length > 0;
     if (!hasSpec) {
       throw new Error(
-        `Pre-flight validation failed: no spec files found in "${join(changeDir, 'specs')}". At least one spec.md is required.`
+        `Design gate failed: no spec files found in "${join(changeDir, 'specs')}". At least one spec.md is required.`
       );
     }
   }
 
+  // 4. design.md debe contener los 5 campos obligatorios.
   validateDesignFields(changeDir);
+
+  // 5. proposal.md debe contener las secciones ## Intent, ## Why, ## What Changes.
+  validateProposalSections(changeDir);
+}
+
+function validateProposalSections(changeDir) {
+  const proposalPath = join(changeDir, 'proposal.md');
+  const proposalContent = readFileSync(proposalPath, 'utf8');
+  const requiredSections = ['Intent', 'Why', 'What Changes'];
+
+  for (const section of requiredSections) {
+    const sectionPattern = new RegExp(`^## ${section}`, 'm');
+    if (!sectionPattern.test(proposalContent)) {
+      throw new Error(
+        `Design gate failed: proposal.md is missing required section "## ${section}".`
+      );
+    }
+  }
 }
 
 function validateDesignFields(changeDir) {
@@ -291,11 +313,13 @@ function validateDesignFields(changeDir) {
     const fieldPattern = new RegExp(`^## ${field}`, 'm');
     if (!fieldPattern.test(designContent)) {
       throw new Error(
-        `Pre-flight validation failed: design.md is missing required field "## ${field}".`
+        `Design gate failed: design.md is missing required field "## ${field}".`
       );
     }
   }
 }
+
+export { designGate, validateProposalSections };
 
 function injectContextBundle(changeName, agent) {
   const changeDir = join(CHANGES_DIR, changeName);
@@ -357,7 +381,7 @@ async function main() {
   const { changeName, fromAgent, dryRun } = parseArgs();
 
   validateChangeName(changeName);
-  preFlightValidation(changeName);
+  designGate(changeName);
   if (!fromAgent) {
     resetFailureCounts(changeName);
   }
@@ -457,4 +481,6 @@ function runPostSteps(changeName) {
   console.log(`\n🎉 Change "${changeName}" successfully archived!`);
 }
 
-main();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}
