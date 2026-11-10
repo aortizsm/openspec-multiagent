@@ -94,19 +94,38 @@ Si algun check falla, el architect envia al developer a corregir antes de reinte
 
 ## Orden del loop
 
-`@code-reviewer` y `@security-reviewer` se ejecutan en **paralelo** después de `@developer` (son independientes: uno revisa código limpio, el otro seguridad). `@verifier` ejecuta después de que ambos aprueben, y `@architect` archiva al final.
+`@test-engineer`, `@code-reviewer` y `@security-reviewer` se ejecutan en **paralelo** después de `@developer` (son independientes entre sí). `@verifier` ejecuta después de que los tres completen, y `@architect` archiva al final.
 
 ```
-@developer  →  @test-engineer  →  [@code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
+@developer  →  [@test-engineer  +  @code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
 ```
 
 Si el cambio incluye UI/UX, se inserta `@ux-designer` antes de `@developer`:
 
 ```
-@ux-designer  →  @developer  →  @test-engineer  →  [@code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
+@ux-designer  →  @developer  →  [@test-engineer  +  @code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
 ```
 
-Si cualquiera de los dos revisores devuelve cambios, `@developer` corrige y ambos vuelven a revisar solo lo tocado.
+Si cualquiera de los tres agentes paralelos devuelve cambios, `@developer` corrige y todos vuelven a revisar solo lo tocado.
+
+### Pre-flight validation
+
+Antes de delegar cualquier agente, el orquestrador ejecuta `preFlightValidation(changeName)` al inicio de `main()`. Valida que:
+
+1. El directorio `openspec/changes/<changeName>/` exista.
+2. Existan `proposal.md`, `design.md` y `tasks.md`.
+3. Exista al menos un `spec.md` en `openspec/changes/<changeName>/specs/`.
+4. El `design.md` contenga los 5 campos obligatorios: `status`, `executive_summary`, `artifacts`, `risks`, `next_recommended`.
+
+Si falta algo, el orquestrador se detiene con un mensaje claro indicando qué falta, sin ejecutar ningún agente.
+
+### Circuit breaker
+
+Cada agente tiene un máximo de 3 reintentos. Si un agente falla 3 veces, el orquestrador se detiene con un mensaje de escalada al `@architect`. El contador de fallos se resetea para cada cambio nuevo. Al reanudar con `--from <agent>`, se conserva el contador de fallos previos del mismo cambio.
+
+### Context bundle
+
+Antes de ejecutar cada agente, el orquestrador llama a `injectContextBundle(changeName, agent)`, que lee `proposal.md`, `design.md`, `tasks.md`, todos los `spec.md` del change y el `git diff` actual, e inyecta todo ese contenido como variable de entorno `OPENCODE_CONTEXT_BUNDLE` al proceso del agente. Esto elimina la necesidad de que el `@architect` pase contexto manualmente.
 
 `@ux-designer` genera wireframes (ASCII), especifica tokens de diseño y revisa requisitos de UX en el spec. Solo actúa cuando el cambio incluye UI.
 
