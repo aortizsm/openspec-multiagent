@@ -38,7 +38,7 @@ Si una sección no aplica (p. ej. sin migración), dilo explícitamente:
 
 ### Idioma
 
-`docs/` en **español**. Nombres de ficheros, rutas y comandos en su forma literal.
+`docs/` se escribe en **español** de forma predeterminada. Si el usuario solicita explícitamente otro idioma para un documento individual, ese documento usa el idioma solicitado y el resto de `docs/` conserva el español como predeterminado. Las specs de OpenSpec y `README.md` se mantienen en inglés. Nombres de ficheros, rutas y comandos conservan su forma literal.
 
 ### Reglas
 

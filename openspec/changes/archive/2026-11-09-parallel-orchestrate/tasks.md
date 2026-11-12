@@ -1,0 +1,3 @@
+- [x] Modificar scripts/orchestrate.mjs: ejecutar code-reviewer y security-reviewer en paralelo después de test-engineer
+- [x] Mantener verifier ejecutándose después de que ambos revisadores completen
+- [x] Verificar que el flujo sigue funcionando correctamente

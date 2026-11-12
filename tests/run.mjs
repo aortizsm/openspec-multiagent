@@ -8,6 +8,9 @@
 import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import {
+  appendFileSync,
+  chmodSync,
+  copyFileSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
@@ -16,7 +19,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { delimiter, join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
@@ -43,6 +46,7 @@ const SCRIPTS = join(process.cwd(), "scripts");
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
 
 function test(name, fn) {
   try {
@@ -54,6 +58,15 @@ function test(name, fn) {
     console.log(`  ✗ ${name}`);
     console.log(`      ${err.message}`);
   }
+}
+
+function integrationTest(name, fn) {
+  if (process.platform === "win32") {
+    skipped += 1;
+    console.log(`  ↷ ${name} (Windows shellless npx launch cannot run .cmd shims)`);
+    return;
+  }
+  test(name, fn);
 }
 
 function run(script, args = [], env = {}, cwd) {
@@ -437,6 +450,15 @@ test("install-agents.mjs without --force skips existing agent files", () => {
   });
 });
 
+test("install-agents.mjs fresh install omits fast-architect", () => {
+  withTempConfigHome(() => {
+    const installed = run("install-agents.mjs", []);
+    assert.strictEqual(installed.status, 0, installed.stderr);
+    const target = join(process.env.XDG_CONFIG_HOME, "opencode", "agents");
+    assert.ok(!existsSync(join(target, "fast-architect.md")));
+  });
+});
+
 test("reinstall non-dry-run overwrites agent files and reconfigures MCP servers", () => {
   withTempConfigHome(() => {
     const r = run("reinstall.mjs", []);
@@ -741,6 +763,225 @@ test("designGate: blocks when proposal.md missing required section", () => {
   }
 });
 
+function writeMissingIntentProposal(changeDir) {
+  writeFileSync(
+    join(changeDir, "proposal.md"),
+    `# Proposal\n\n## Why\n## What Changes\n`
+  );
+}
+
+function assertIntentFailureStopsDeveloper() {
+  const orchestration = run("orchestrate.mjs", [DG_CHANGE_NAME]);
+  assert.notStrictEqual(orchestration.status, 0);
+  assert.match(
+    orchestration.stderr,
+    /proposal\.md is missing required section "## Intent"/
+  );
+  assert.ok(!orchestration.stdout.includes("=== Running developer"));
+}
+
+function assertResumeFlagRejected(args) {
+  const orchestration = run("orchestrate.mjs", args);
+  assert.notStrictEqual(orchestration.status, 0);
+  assert.match(orchestration.stderr, /--from has been removed/);
+  assert.ok(!orchestration.stdout.includes("=== Running"));
+  assert.ok(!orchestration.stdout.includes("openspec archive"));
+}
+
+test("orchestrate: dry-run shows sequential tests before parallel reviews", () => {
+  makeDgChange({ "specs/foo/spec.md": "# Spec\n" });
+  try {
+    const orchestration = run("orchestrate.mjs", [DG_CHANGE_NAME, "--dry-run"]);
+    assert.strictEqual(orchestration.status, 0, orchestration.stderr);
+    assertPhaseOrder(orchestration.stdout);
+  } finally {
+    cleanupDgChange();
+  }
+});
+
+function assertPhaseOrder(plan) {
+  const phases = ["1. developer", "2. test-engineer", "3. code-reviewer + security-reviewer", "4. verifier", "5. openspec validate", "6. openspec archive"];
+  const positions = phases.map((phase) => plan.indexOf(phase));
+  assert.ok(positions.every((position) => position >= 0));
+  assert.deepStrictEqual(positions, [...positions].sort((left, right) => left - right));
+}
+
+const FAKE_NPX_SCRIPT = `const { appendFileSync, existsSync, writeFileSync } = require("node:fs");
+const { join } = require("node:path");
+const args = process.argv.slice(2);
+const eventDir = process.env.ORCHESTRATION_EVENTS;
+const record = (event) => appendFileSync(join(eventDir, "events.log"), event + "\\n");
+if (args[0] === "opencode") {
+  const phase = args[args.indexOf("-a") + 1];
+  record(phase + ":start");
+  if (["code-reviewer", "security-reviewer"].includes(phase)) {
+    writeFileSync(join(eventDir, phase + ".started"), "started");
+    const markerPaths = ["code-reviewer", "security-reviewer"].map((name) => join(eventDir, name + ".started"));
+    const deadline = Date.now() + 5000;
+    while (!markerPaths.every(existsSync) && Date.now() < deadline) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+    if (!markerPaths.every(existsSync)) process.exit(8);
+  }
+  const exitCode = process.env.FAIL_STAGE === phase ? 1 : 0;
+  record(phase + ":end:" + exitCode);
+  process.exit(exitCode);
+}
+const phase = args[0] === "openspec" ? args[1] : "unknown";
+record(phase + ":start");
+record(phase + ":end:0");
+`;
+
+function writeFakeNpx(binaryDirectory) {
+  const scriptPath = join(binaryDirectory, "fake-npx.cjs");
+  const shimPath = join(binaryDirectory, process.platform === "win32" ? "npx.cmd" : "npx");
+  writeFileSync(scriptPath, FAKE_NPX_SCRIPT);
+  writePlatformNpxShim(shimPath);
+}
+
+function writePlatformNpxShim(shimPath) {
+  const windowsShim = `@echo off\r\nnode "%~dp0fake-npx.cjs" %*\r\nexit /b %errorlevel%\r\n`;
+  const posixShim = `#!/usr/bin/env node\n${FAKE_NPX_SCRIPT}`;
+  writeFileSync(shimPath, process.platform === "win32" ? windowsShim : posixShim);
+  if (process.platform !== "win32") {
+    chmodSync(shimPath, 0o755);
+  }
+}
+
+function createIsolatedChange(root) {
+  const changeDir = join(root, "openspec", "changes", "runtime-sequencing-test");
+  mkdirSync(join(changeDir, "specs", "feature"), { recursive: true });
+  writeFileSync(join(changeDir, "proposal.md"), "# Proposal\n\n## Intent\n## Why\n## What Changes\n");
+  writeFileSync(join(changeDir, "design.md"), "# Design\n\n## status\n## executive_summary\n## artifacts\n## risks\n## next_recommended\n");
+  writeFileSync(join(changeDir, "tasks.md"), "# Tasks\n\n- [ ] Test runtime sequence\n");
+  writeFileSync(join(changeDir, ".openspec.yaml"), "schema: spec-driven\n");
+  writeFileSync(join(changeDir, "specs", "feature", "spec.md"), "# Feature\n");
+}
+
+function initializeIsolatedGit(root) {
+  const init = spawnSync("git", ["init"], { cwd: root, encoding: "utf8" });
+  const stage = spawnSync("git", ["add", "."], { cwd: root, encoding: "utf8" });
+  const commit = spawnSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "fixture"], { cwd: root, encoding: "utf8" });
+  for (const gitCommand of [init, stage, commit]) assert.strictEqual(gitCommand.status, 0, gitCommand.stderr);
+}
+
+function createIsolatedOrchestrationRepo() {
+  const root = mkdtempSync(join(tmpdir(), "osm-orchestrate-runtime-"));
+  mkdirSync(join(root, "scripts"), { recursive: true });
+  mkdirSync(join(root, "bin"), { recursive: true });
+  copyFileSync(join(SCRIPTS, "orchestrate.mjs"), join(root, "scripts", "orchestrate.mjs"));
+  copyFileSync(join(SCRIPTS, "rollback.mjs"), join(root, "scripts", "rollback.mjs"));
+  createIsolatedChange(root);
+  writeFakeNpx(join(root, "bin"));
+  initializeIsolatedGit(root);
+  return root;
+}
+
+function runIsolatedOrchestration(root, failureStage = "") {
+  const env = {
+    ...process.env,
+    PATH: `${join(root, "bin")}${delimiter}${process.env.PATH}`,
+    ORCHESTRATION_EVENTS: join(root, "events"),
+    FAIL_STAGE: failureStage,
+  };
+  mkdirSync(env.ORCHESTRATION_EVENTS, { recursive: true });
+  return spawnSync("node", [join(root, "scripts", "orchestrate.mjs"), "runtime-sequencing-test"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+}
+
+function readOrchestrationEvents(root) {
+  return readFileSync(join(root, "events", "events.log"), "utf8").trim().split("\n");
+}
+
+function runtimeEventIndex(events, event) {
+  const index = events.indexOf(event);
+  assert.ok(index >= 0, `missing runtime event: ${event}`);
+  return index;
+}
+
+function assertSequentialPhasesComplete(events) {
+  assert.ok(runtimeEventIndex(events, "developer:start") < runtimeEventIndex(events, "developer:end:0"));
+  assert.ok(runtimeEventIndex(events, "developer:end:0") < runtimeEventIndex(events, "test-engineer:start"));
+  assert.ok(runtimeEventIndex(events, "test-engineer:start") < runtimeEventIndex(events, "test-engineer:end:0"));
+}
+
+function assertReviewersOverlap(events) {
+  assert.ok(runtimeEventIndex(events, "test-engineer:end:0") < runtimeEventIndex(events, "code-reviewer:start"));
+  assert.ok(runtimeEventIndex(events, "test-engineer:end:0") < runtimeEventIndex(events, "security-reviewer:start"));
+  assert.ok(runtimeEventIndex(events, "code-reviewer:start") < runtimeEventIndex(events, "code-reviewer:end:0"));
+  assert.ok(runtimeEventIndex(events, "security-reviewer:start") < runtimeEventIndex(events, "security-reviewer:end:0"));
+  assert.ok(runtimeEventIndex(events, "code-reviewer:start") < runtimeEventIndex(events, "security-reviewer:end:0"));
+  assert.ok(runtimeEventIndex(events, "security-reviewer:start") < runtimeEventIndex(events, "code-reviewer:end:0"));
+}
+
+function assertPostReviewGates(events) {
+  assert.ok(runtimeEventIndex(events, "code-reviewer:end:0") < runtimeEventIndex(events, "verifier:start"));
+  assert.ok(runtimeEventIndex(events, "security-reviewer:end:0") < runtimeEventIndex(events, "verifier:start"));
+  assert.ok(runtimeEventIndex(events, "verifier:end:0") < runtimeEventIndex(events, "validate:start"));
+  assert.ok(runtimeEventIndex(events, "validate:end:0") < runtimeEventIndex(events, "archive:start"));
+  assert.ok(runtimeEventIndex(events, "archive:start") < runtimeEventIndex(events, "archive:end:0"));
+}
+
+function assertSuccessfulRuntimeSequence(events) {
+  assertSequentialPhasesComplete(events);
+  assertReviewersOverlap(events);
+  assertPostReviewGates(events);
+}
+
+function assertTestEngineerFailureStopsPipeline(events) {
+  assert.strictEqual(events.filter((event) => event === "test-engineer:end:1").length, 3);
+  assert.ok(!events.some((event) => /^(code-reviewer|security-reviewer|verifier|validate|archive):/.test(event)));
+}
+
+integrationTest("orchestrate: runtime phases wait for completion and reviewers overlap", () => {
+  const isolatedRoot = createIsolatedOrchestrationRepo();
+  try {
+    const orchestration = runIsolatedOrchestration(isolatedRoot);
+    assert.strictEqual(orchestration.status, 0, orchestration.stderr);
+    assertSuccessfulRuntimeSequence(readOrchestrationEvents(isolatedRoot));
+  } finally {
+    rmSync(isolatedRoot, { recursive: true, force: true });
+  }
+});
+
+integrationTest("orchestrate: test-engineer failure blocks all later phases in an isolated git repo", () => {
+  const isolatedRoot = createIsolatedOrchestrationRepo();
+  try {
+    const orchestration = runIsolatedOrchestration(isolatedRoot, "test-engineer");
+    assert.notStrictEqual(orchestration.status, 0);
+    assert.match(orchestration.stderr, /Restart the full pipeline with: node scripts\/orchestrate\.mjs runtime-sequencing-test/);
+    assert.strictEqual(spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: isolatedRoot, encoding: "utf8" }).stdout.trim(), isolatedRoot);
+    assertTestEngineerFailureStopsPipeline(readOrchestrationEvents(isolatedRoot));
+  } finally {
+    rmSync(isolatedRoot, { recursive: true, force: true });
+  }
+});
+
+test("orchestrate: rejects separated --from before agents start", () => {
+  makeDgChange({ "specs/foo/spec.md": "# Spec\n" });
+  try { assertResumeFlagRejected([DG_CHANGE_NAME, "--from", "verifier"]); }
+  finally { cleanupDgChange(); }
+});
+
+test("orchestrate: rejects equals --from before agents start", () => {
+  makeDgChange({ "specs/foo/spec.md": "# Spec\n" });
+  try { assertResumeFlagRejected([DG_CHANGE_NAME, "--from=verifier"]); }
+  finally { cleanupDgChange(); }
+});
+
+test("orchestrate: rejects a proposal missing Intent before running agents", () => {
+  const changeDir = makeDgChange({ "specs/foo/spec.md": "# Spec\n" });
+  try {
+    writeMissingIntentProposal(changeDir);
+    assertIntentFailureStopsDeveloper();
+  } finally {
+    cleanupDgChange();
+  }
+});
+
 test("designGate: passes for a complete change with skip_specs: true", () => {
   const changeDir = makeDgChange(
     { "specs/foo/spec.md": "# Spec\n" },
@@ -782,7 +1023,7 @@ test("validateProposalSections: passes when all sections present", () => {
 // Summary
 // ---------------------------------------------------------------------------
 console.log("");
-console.log(`Results: ${passed} passed, ${failed} failed`);
+console.log(`Results: ${passed} passed, ${failed} failed, ${skipped} skipped`);
 if (failed > 0) {
   process.exit(1);
 }

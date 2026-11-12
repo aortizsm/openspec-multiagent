@@ -22,6 +22,7 @@ const AGENTS = [
 const MAX_RETRIES = 3;
 const REQUIRED_DESIGN_FIELDS = ['status', 'executive_summary', 'artifacts', 'risks', 'next_recommended'];
 const CONTEXT_FILES = ['proposal.md', 'design.md', 'tasks.md'];
+const ORCHESTRATOR_COMMAND = 'node scripts/orchestrate.mjs';
 
 const failureCounts = new Map();
 
@@ -30,40 +31,56 @@ function printUsage() {
 Usage: node scripts/orchestrate.mjs <change-name> [options]
 
 Options:
-  --from <agent>     Resume from a specific agent (developer, test-engineer, code-reviewer, security-reviewer, verifier)
   --dry-run          Show the execution plan without running
   --help             Show this help message
 
-Agents run in order: ${AGENTS.join(' → ')}
+Pipeline: developer → test-engineer → [code-reviewer + security-reviewer] → verifier
 After all pass: openspec validate <change> && openspec archive <change> --yes
 `);
 }
 
-function parseArgs() {
-  const args = process.argv.slice(2);
-  
-  if (args.includes('--help') || args.includes('-h')) {
-    printUsage();
-    process.exit(0);
+function isResumeOption(argument) {
+  return argument === '--from' || argument.startsWith('--from=');
+}
+
+function rejectResumeOptions(args) {
+  if (!args.some(isResumeOption)) {
+    return;
   }
 
-  const changeName = args.find(arg => !arg.startsWith('--'));
-  const fromIndex = args.indexOf('--from');
-  const fromAgent = fromIndex !== -1 ? args[fromIndex + 1] : null;
-  const dryRun = args.includes('--dry-run');
+  console.error('Error: --from has been removed.');
+  printFullPipelineRestart();
+  process.exit(1);
+}
 
+function hasHelpOption(args) {
+  return args.includes('--help') || args.includes('-h');
+}
+
+function parseChangeOptions(args) {
+  const changeName = args.find(arg => !arg.startsWith('--'));
   if (!changeName) {
     console.error('Error: Change name is required');
     printUsage();
     process.exit(1);
   }
+  return { changeName, dryRun: args.includes('--dry-run') };
+}
 
-  if (fromAgent && !AGENTS.includes(fromAgent)) {
-    console.error(`Error: Invalid agent "${fromAgent}". Valid agents: ${AGENTS.join(', ')}`);
-    process.exit(1);
+function parseArgs() {
+  const args = process.argv.slice(2);
+  rejectResumeOptions(args);
+
+  if (hasHelpOption(args)) {
+    printUsage();
+    process.exit(0);
   }
 
-  return { changeName, fromAgent, dryRun };
+  return parseChangeOptions(args);
+}
+
+function printFullPipelineRestart(changeName = '<change-name>') {
+  console.error(`Restart the full pipeline with: ${ORCHESTRATOR_COMMAND} ${changeName}`);
 }
 
 function validateChangeName(changeName) {
@@ -140,9 +157,8 @@ function runAgent(agent, changeName) {
 
     incrementFailureCount(changeName, agent);
     lastError = new Error(`Agent "${agent}" failed with exit code ${agentResult.status}`);
-    const resumeCmd = `node scripts/orchestrate.mjs ${changeName} --from ${agent}`;
     console.error(`\n❌ Agent "${agent}" failed with exit code ${agentResult.status} (retry ${getFailureCount(changeName, agent)}/${MAX_RETRIES})`);
-    console.error(`Resume with: ${resumeCmd}`);
+    printFullPipelineRestart(changeName);
     if (getFailureCount(changeName, agent) >= MAX_RETRIES) {
       const escalationMsg = `Agent "${agent}" exceeded ${MAX_RETRIES} retries for change "${changeName}". Escalating to architect.`;
       console.error(`\n❌ ${escalationMsg}`);
@@ -170,8 +186,8 @@ function waitForAgent(child, agent, changeName) {
     child.on('close', (code) => {
       if (code !== 0) {
         incrementFailureCount(changeName, agent);
-        const resumeCmd = `node scripts/orchestrate.mjs ${changeName} --from ${agent}`;
-        console.error(`\n❌ Agent "${agent}" failed with exit code ${code}\nResume with: ${resumeCmd}`);
+        console.error(`\n❌ Agent "${agent}" failed with exit code ${code}`);
+        printFullPipelineRestart(changeName);
         reject(new Error(`Agent "${agent}" failed with exit code ${code}`));
         return;
       }
@@ -198,9 +214,8 @@ async function runAgentAsyncWithRetry(agent, changeName) {
       return;
     } catch (error) {
       lastError = error;
-      const resumeCmd = `node scripts/orchestrate.mjs ${changeName} --from ${agent}`;
       console.error(`\n❌ Agent "${agent}" failed (attempt ${attempt}/${MAX_RETRIES})`);
-      console.error(`Resume with: ${resumeCmd}`);
+      printFullPipelineRestart(changeName);
       if (attempt >= MAX_RETRIES) {
         const escalationMsg = `Agent "${agent}" exceeded ${MAX_RETRIES} retries for change "${changeName}". Escalating to architect.`;
         console.error(`\n❌ ${escalationMsg}`);
@@ -378,48 +393,30 @@ function readGitDiff() {
 }
 
 async function main() {
-  const { changeName, fromAgent, dryRun } = parseArgs();
+  const { changeName, dryRun } = parseArgs();
 
   validateChangeName(changeName);
   designGate(changeName);
-  if (!fromAgent) {
-    resetFailureCounts(changeName);
-  }
-
-  let startIndex = 0;
-  if (fromAgent) {
-    startIndex = AGENTS.indexOf(fromAgent);
-  }
-
-  const agentsToRun = AGENTS.slice(startIndex);
+  resetFailureCounts(changeName);
 
   if (dryRun) {
-    runDryRun(changeName, fromAgent, startIndex);
+    runDryRun(changeName);
     return;
   }
 
   console.log(`\n🚀 Starting orchestration for change "${changeName}"`);
-  if (fromAgent) {
-    console.log(`Resuming from: ${fromAgent}`);
-  }
-
-  await runAgents(agentsToRun, changeName);
+  await runAgents(AGENTS, changeName);
   runPostSteps(changeName);
 }
 
-function runDryRun(changeName, fromAgent, startIndex) {
-  const agentsToRun = AGENTS.slice(startIndex);
-
+function runDryRun(changeName) {
   console.log(`\n📋 Execution plan for change "${changeName}":`);
-  console.log(`Starting from: ${fromAgent || AGENTS[0]}`);
-  console.log('\nAgents to run:');
-  agentsToRun.forEach((agent, i) => {
-    console.log(`  ${startIndex + i + 1}. ${agent}`);
-  });
-  const validateStep = AGENTS.length + 1;
-  const archiveStep = AGENTS.length + 2;
-  console.log(`  ${validateStep}. openspec validate ${changeName}`);
-  console.log(`  ${archiveStep}. openspec archive ${changeName} --yes`);
+  console.log('  1. developer');
+  console.log('  2. test-engineer (sequential, after developer)');
+  console.log('  3. code-reviewer + security-reviewer (parallel, after test-engineer)');
+  console.log('  4. verifier (after all quality agents)');
+  console.log(`  5. openspec validate ${changeName}`);
+  console.log(`  6. openspec archive ${changeName} --yes`);
   console.log('\nDry run complete. Run without --dry-run to execute.');
 }
 
@@ -430,7 +427,7 @@ async function runAgents(agentsToRun, changeName) {
 
     if (isParallelGroupStart(agentsToRun, index)) {
       await runParallelGroup(agentsToRun, index, changeName);
-      index += 3;
+      index += 2;
       continue;
     }
 
@@ -441,14 +438,13 @@ async function runAgents(agentsToRun, changeName) {
 
 function isParallelGroupStart(agentsToRun, index) {
   return (
-    agentsToRun[index] === 'test-engineer' &&
-    agentsToRun[index + 1] === 'code-reviewer' &&
-    agentsToRun[index + 2] === 'security-reviewer'
+    agentsToRun[index] === 'code-reviewer' &&
+    agentsToRun[index + 1] === 'security-reviewer'
   );
 }
 
 async function runParallelGroup(agentsToRun, index, changeName) {
-  const agents = [agentsToRun[index], agentsToRun[index + 1], agentsToRun[index + 2]];
+  const agents = [agentsToRun[index], agentsToRun[index + 1]];
   agents.forEach(agent => saveCheckpoint(agent));
   const children = agents.map(agent => spawnAgent(agent, changeName));
   try {

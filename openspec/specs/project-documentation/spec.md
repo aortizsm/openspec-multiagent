@@ -1,78 +1,82 @@
 # project-documentation Specification
 
 ## Purpose
-Define la documentación humana que produce el workflow: qué artefactos existen, con qué estructura, de qué fuentes se derivan, quién los escribe y revisa, y cuándo son obligatorios antes de archivar un cambio.
+Define the human-facing documentation produced by the workflow: which artifacts exist, their structure, the sources from which they are derived, who writes and reviews them, and when they are required before archiving a change.
 
 ## Requirements
 
-### Requirement: Estructura documental fija
+### Requirement: Fixed documentation structure
 
-El repo MUST mantener una carpeta `docs/` con esta estructura: `docs/CHANGELOG.md` como índice cronológico, `docs/changes/YYYY-MM-DD-<change>.md` con una entrada por cambio archivado y `docs/guides/<capability>.md` con el manual de uso de cada capacidad.
+The repository MUST maintain a `docs/` directory with this structure: `docs/CHANGELOG.md` as a chronological index, `docs/changes/YYYY-MM-DD-<change>.md` with one entry per archived change, and `docs/guides/<capability>.md` with a usage guide for each capability.
 
-#### Scenario: Cambio archivado con entrada
-- **WHEN** un change se archiva
-- **THEN** existe `docs/changes/<fecha>-<change>.md` y una línea en `docs/CHANGELOG.md` que enlaza a esa entrada
+#### Scenario: Archived change has an entry
+- **WHEN** a change is archived
+- **THEN** `docs/changes/<date>-<change>.md` exists along with a line in `docs/CHANGELOG.md` linking to that entry
 
-#### Scenario: Capacidad con guía
-- **WHEN** una capacidad queda sincronizada en `openspec/specs/`
-- **THEN** existe o se crea `docs/guides/<capability>.md` que explica cómo se usa
+#### Scenario: Capability has a guide
+- **WHEN** a capability is synchronized to `openspec/specs/`
+- **THEN** `docs/guides/<capability>.md` exists or is created to explain how it is used
 
-### Requirement: Entrada de cambio derivada de artefactos
+### Requirement: Change entry derived from artifacts
 
-Cada entrada de `docs/changes/` MUST derivarse de los artefactos del change — `proposal.md`, `design.md`, `tasks.md`, el diff y el reporte del `@verifier` — y MUST cubrir: contexto, qué cambió, por qué, cómo se usa, impacto o migración y evidencia de verificación. MUST NOT inventar comportamiento que no esté en el diff o en la spec.
+Each `docs/changes/` entry MUST be derived from the change artifacts—`proposal.md`, `design.md`, `tasks.md`, the diff, and the `@verifier` report—and MUST cover: context, what changed, why, how to use it, impact or migration, and verification evidence. It MUST NOT invent behavior that is not in the diff or the spec.
 
-#### Scenario: Entrada completa
-- **WHEN** se escribe la entrada de un change archivado
-- **THEN** contiene las seis secciones y cada afirmación de comportamiento se puede rastrear al diff, a la spec o al reporte del verifier
+#### Scenario: Complete entry
+- **WHEN** an entry for an archived change is written
+- **THEN** it contains all six sections, and each behavioral claim can be traced to the diff, the spec, or the verifier report
 
-#### Scenario: Sin material para una sección
-- **WHEN** el change no tiene impacto de migración
-- **THEN** la entrada lo dice explícitamente en vez de omitir la sección o rellenarla
+#### Scenario: No material for a section
+- **WHEN** the change has no migration impact
+- **THEN** the entry states that explicitly instead of omitting or filling in the section
 
-### Requirement: Documentación como task del change
+### Requirement: Documentation as a change task
 
-Cuando un change altera comportamiento, configuración o uso, su `tasks.md` MUST incluir una task de documentación. La task MUST ser ejecutada por `@developer` y MUST formar parte del mismo diff que el cambio.
+When a change alters behavior, configuration, or usage, its `tasks.md` MUST include a documentation task. The task MUST be performed by `@developer` and MUST be part of the same diff as the change.
 
-#### Scenario: Cambio visible para el usuario
-- **WHEN** un change añade o modifica un agente, un permiso, un comando o un gate
-- **THEN** el change incluye una task de documentación y la entrada correspondiente en `docs/`
+#### Scenario: User-visible change
+- **WHEN** a change adds or modifies an agent, permission, command, or gate
+- **THEN** the change includes a documentation task and the corresponding entry in `docs/`
 
-#### Scenario: Cambio invisible
-- **WHEN** un change es un refactor interno sin efecto observable
-- **THEN** no requiere entrada de changelog, pero la decisión de omitirla queda registrada en `tasks.md`
+#### Scenario: Invisible change
+- **WHEN** a change is an internal refactor with no observable effect
+- **THEN** it does not require a changelog entry, but the decision to omit one is recorded in `tasks.md`
 
-### Requirement: Revisión de exactitud documental
+### Requirement: Documentation accuracy review
 
-El `@code-reviewer` MUST comprobar que la documentación coincide con el diff: nombres de ficheros, comandos, rutas y comportamiento descrito. MUST NOT evaluar estilo, tono ni redacción.
+The `@code-reviewer` MUST verify that the documentation matches the diff, including file names, commands, paths, and described behavior. The reviewer MUST NOT evaluate style, tone, or wording.
 
-#### Scenario: Documentación desactualizada
-- **WHEN** el diff renombra un fichero o cambia un comando y la documentación mantiene el nombre anterior
-- **THEN** el `@code-reviewer` lo marca como `CRITICAL`
+#### Scenario: Outdated documentation
+- **WHEN** the diff renames a file or changes a command while the documentation retains the previous name
+- **THEN** the `@code-reviewer` marks it as `CRITICAL`
 
-#### Scenario: Documentación imprecisa
-- **WHEN** la documentación describe un comportamiento que el diff no implementa
-- **THEN** el `@code-reviewer` lo marca como `WARNING` y pide corregir la doc o el código
+#### Scenario: Inaccurate documentation
+- **WHEN** the documentation describes behavior that the diff does not implement
+- **THEN** the `@code-reviewer` marks it as `WARNING` and requests a correction to the documentation or code
 
-### Requirement: Gate de documentación antes de archivar
+### Requirement: Documentation gate before archiving
 
-El `@architect` MUST NOT archivar un change que altere comportamiento o uso sin entrada de changelog y sin actualizar la guía de la capacidad afectada. La ausencia de documentación es un motivo de bloqueo, no una observación.
+The `@architect` MUST NOT archive a change that alters behavior or usage without a changelog entry and an updated guide for the affected capability. Missing documentation is a blocking reason, not an observation.
 
-#### Scenario: Falta la entrada
-- **WHEN** el change está verificado pero no tiene entrada en `docs/`
-- **THEN** el `@architect` no archiva y devuelve la task de documentación al `@developer`
+#### Scenario: Entry is missing
+- **WHEN** a change has been verified but has no entry in `docs/`
+- **THEN** the `@architect` does not archive and returns the documentation task to the `@developer`
 
-#### Scenario: Change solo documental
-- **WHEN** el change únicamente actualiza documentación
-- **THEN** el gate se satisface con la propia entrada del change y no exige guía nueva
+#### Scenario: Documentation-only change
+- **WHEN** a change updates documentation only
+- **THEN** the gate is satisfied by the change's own entry and does not require a new guide
 
-### Requirement: Idioma de la documentación
+### Requirement: Documentation language
 
-La documentación de `docs/` MUST escribirse en español. Las specs de `openspec/specs/` y el `README.md` MUST mantenerse en inglés.
+Documentation in `docs/` MUST be written in Spanish unless the user explicitly requests another language for an individual document; that document MUST use the requested language, and the rest of `docs/` MUST retain Spanish as the default. OpenSpec specs and `README.md` MUST remain in English.
 
-#### Scenario: Entrada en español
-- **WHEN** se escribe una entrada de `docs/changes/`
-- **THEN** el texto está en español, con los nombres de ficheros y comandos en su forma literal
+#### Scenario: Spanish change entry
+- **WHEN** a `docs/changes/` entry is written without a different language request
+- **THEN** the text is in Spanish, with file names and commands in their literal form
 
-#### Scenario: Spec en inglés
-- **WHEN** se sincroniza un delta al archivar
-- **THEN** la spec resultante en `openspec/specs/` queda en inglés
+#### Scenario: OpenSpec spec in English
+- **WHEN** a delta is synced during archive
+- **THEN** the resulting spec in `openspec/specs/` is in English
+
+#### Scenario: Requested alternate language for an individual document
+- **WHEN** the user explicitly requests another language for an individual document
+- **THEN** that document uses the requested language, and the rest of `docs/` retains Spanish as the default

@@ -1,16 +1,16 @@
 # OpenSpec Multiagent — Convenios de Flujo
 
-## Aprobación del Architect (solo para `@architect`)
+## Aprobación del diseño por el Architect (solo para `@architect`)
 
-Cuando el architect necesita aprobación del usuario para avanzar a implementación o archivar un cambio:
+El architect obtiene una sola aprobación explícita del usuario sobre el diseño completo antes de iniciar cualquier agente. Después continúa automáticamente por implementación, revisión, verificación y archivo, sin pedir aprobaciones intermedias. Si una revisión o verificación encuentra hallazgos, inicia el ciclo de corrección consolidada descrito abajo; nunca archiva con hallazgos obligatorios pendientes.
 
 1. **Usar `question` tool con opciones**, NUNCA pedir que el usuario escriba una palabra específica.
    ```
    question(questions: [{
-     question: "¿Aprobado para implementar/archivar?",
+      question: "¿Aprobado el diseño para iniciar el change?",
      header: "Decision",
      options: [
-       { label: "✅ Aprobado", description: "Seguir adelante con la implementación" },
+        { label: "✅ Aprobado", description: "Seguir adelante con el change completo" },
        { label: "🔄 Revisar cambios", description: "Modificar aspectos antes de continuar" },
        { label: "❌ Rechazar", description: "No proceder con este cambio" }
      ]
@@ -80,33 +80,43 @@ El `@security-reviewer` evalúa 12 criterios objetivos (spec `security-criteria`
 
 Antes de archivar un cambio, @architect debe verificar estos items. Si alguno falla, no archivar:
 
+En todos los cambios, `@test-engineer` debe terminar antes de que `@code-reviewer` y `@security-reviewer` empiecen en paralelo. Los tres deben completar con éxito, y `@verifier` debe entregar un reporte aceptable antes de archivar.
+
 | # | Check | Comando / Verificacion |
 |---|-------|----------------------|
-| 1 | `openspec validate` pasa | `openspec validate` (exit 0) |
+| 1 | Validación estricta pasa | `openspec validate <change> --strict` (exit 0) |
 | 2 | No hay diff inesperado | `git diff` solo afecta archivos del change |
-| 3 | Reporte del `@verifier` limpio | Sin `FAIL` y sin `UNVERIFIABLE` injustificados |
-| 4 | `@security-reviewer` aprobó | Sin hallazgos CRITICAL pendientes |
+| 3 | Fase de calidad aprobada | `@test-engineer`, `@code-reviewer` y `@security-reviewer` completaron correctamente. |
+| 4 | Verificación independiente aprobada | `@verifier` sin `FAIL` ni `UNVERIFIABLE` injustificados. |
 | 5 | Spec sync sin conflictos | Los deltas del change no chocan con spec main |
 | 6 | `## Purpose` completo | No queda "TBD" ni placeholder en el spec archivado |
 | 7 | Documentación del change visible | Existe `docs/changes/<fecha>-<change>.md` con las seis secciones, está enlazada en `docs/CHANGELOG.md` y `docs/guides/<capability>.md` está al día (`git diff -- docs/`) |
 
-Si algun check falla, el architect envia al developer a corregir antes de reintentar el archive.
+Si falla cualquier agente de calidad, `@architect` consolida los hallazgos y devuelve un único bundle al developer; después repite la fase de calidad completa. Si falla `@verifier`, incorpora el escenario fallido y su evidencia al siguiente bundle, vuelve a ejecutar la fase de calidad completa y verifica otra vez solo cuando todos los agentes de calidad hayan tenido éxito. Si falla una validación, se corrige antes de archivar.
+
+### Hallazgos consolidados y límite de correcciones
+
+Cuando termina la secuencia de calidad (`@test-engineer` primero; los revisores paralelos se ejecutan cuando su predecesor tuvo éxito), `@architect` crea un único bundle ordenado para `@developer` con todos los hallazgos reportados por los agentes que se ejecutaron. Registra cada hallazgo en `## Review Findings` de `tasks.md` del change. Cada fila incluye ID estable (por ejemplo, `RF-001`), agente(s) de origen, severidad, requisito/escenario de aceptación vinculado, fichero/ubicación, corrección solicitada, estado (`open`, `resolved` o `not adopted`) y evidencia de cierre o justificación. Mantiene también el número de ronda actual, de un máximo de tres.
+
+Fusiona hallazgos solo cuando comparten la misma causa raíz: conserva todas las fuentes y la severidad más alta. Mantiene separados los hallazgos con causas o criterios distintos. Envía al developer un solo bundle, no mensajes por partes; al recibir la corrección, actualiza cada fila con estado y evidencia. Un hallazgo resuelto no se reabre sin evidencia nueva. Una `SUGGESTION` rechazada conserva su justificación y no bloquea el archivo; hallazgos `CRITICAL` o `WARNING` requeridos permanecen abiertos hasta que haya evidencia de resolución.
+
+Cada ronda de corrección consiste en un bundle consolidado, una corrección del developer y la repetición de toda la secuencia de calidad (`@test-engineer`, luego `@code-reviewer` y `@security-reviewer` en paralelo); si la calidad termina con éxito, `@verifier` ejecuta su verificación independiente. Los `FAIL` del verifier se añaden con su evidencia al siguiente bundle cuando aún se permite otra ronda. No se omite ni debilita ningún gate. Se permiten como máximo tres rondas; si al terminar la tercera quedan hallazgos `CRITICAL` o `WARNING` abiertos, `@architect` se detiene, muestra el ledger al usuario y no archiva. Si `@verifier` informa `FAIL` después de la tercera ronda, `@architect` registra y reporta el escenario fallido y su evidencia, no inicia una cuarta ronda y no archiva.
 
 ## Orden del loop
 
 El usuario aprueba el diseño una sola vez, antes de que cualquier agente ejecute. Después de esa aprobación, el architect ejecuta el loop completo automáticamente, sin `question` intermedios:
 
 ```
-@developer  →  [@test-engineer  +  @code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
+@developer  →  @test-engineer  →  [@code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
 ```
 
 Si el cambio incluye UI/UX, se inserta `@ux-designer` antes de `@developer`:
 
 ```
-@ux-designer  →  @developer  →  [@test-engineer  +  @code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
+@ux-designer  →  @developer  →  @test-engineer  →  [@code-reviewer  +  @security-reviewer]  →  @verifier  →  @architect archiva
 ```
 
-Si cualquiera de los tres agentes paralelos devuelve cambios, `@developer` corrige y todos vuelven a revisar solo lo tocado.
+Si cualquier agente de calidad devuelve cambios, `@developer` corrige y el flujo completo de calidad se repite: primero `@test-engineer`, después ambos revisores en paralelo. Una falla durante la verificación también requiere repetir las fases desde `@developer`.
 
 ### Design gate
 
@@ -116,17 +126,17 @@ Antes de ejecutar cualquier agente, el orquestrador ejecuta `designGate(changeNa
 2. Existan `proposal.md`, `design.md` y `tasks.md`.
 3. Exista al menos un `spec.md` en `openspec/changes/<changeName>/specs/` (salvo `skip_specs: true` en `.openspec.yaml`).
 4. El `design.md` contenga los 5 campos obligatorios: `status`, `executive_summary`, `artifacts`, `risks`, `next_recommended`.
-5. El `proposal.md` contenga las secciones `## Intent`, `## Why` y `## What Changes`.
+5. El `proposal.md` contenga las secciones `## Intent`, `## Why` y `## What Changes`. Esta es una extensión local del template genérico de OpenSpec: quienes redacten propuestas deben incluir `## Intent` aunque el template no lo proporcione.
 
 Si falta algo, el orquestrador detiene la ejecución con un mensaje claro indicando qué falta, sin ejecutar ningún agente.
 
 ### Pre-flight validation (design gate)
 
-La validación previa ahora se ejecuta a través de `designGate(changeName)` (ver sección "Design gate"). Valida que el diseño esté completo antes de delegar cualquier agente: directorio del change, archivos `proposal.md`/`design.md`/`tasks.md`, al menos un `spec.md`, los 5 campos obligatorios de `design.md` y las secciones `## Intent`, `## Why`, `## What Changes` de `proposal.md`. Si falta algo, el orquestrador se detiene con un mensaje claro sin ejecutar ningún agente.
+La validación previa ahora se ejecuta a través de `designGate(changeName)` (ver sección "Design gate"). Valida que el diseño esté completo antes de delegar cualquier agente: directorio del change, archivos `proposal.md`/`design.md`/`tasks.md`, al menos un `spec.md` salvo que `.openspec.yaml` tenga `skip_specs: true`, los 5 campos obligatorios de `design.md` y las secciones `## Intent`, `## Why`, `## What Changes` de `proposal.md`. Si falta algo, el orquestrador se detiene con un mensaje claro sin ejecutar ningún agente.
 
 ### Circuit breaker
 
-Cada agente tiene un máximo de 3 reintentos. Si un agente falla 3 veces, el orquestrador se detiene con un mensaje de escalada al `@architect`. El contador de fallos se resetea para cada cambio nuevo. Al reanudar con `--from <agent>`, se conserva el contador de fallos previos del mismo cambio.
+Cada agente tiene un máximo de 3 reintentos. Si un agente falla 3 veces, el orquestrador se detiene con un mensaje de escalada al `@architect`. El contador de fallos se resetea para cada ejecución. No existe reanudación desde una fase posterior: tras corregir una falla, ejecutar de nuevo `node scripts/orchestrate.mjs <change-name>` para empezar el pipeline completo en `@developer`.
 
 ### Context bundle
 

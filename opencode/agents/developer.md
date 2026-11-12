@@ -110,8 +110,11 @@ Design Pattern Decision
 - The architect does not intervene in this tactical decision.
 - Do not recommend the pattern to the user.
 
-Testing policy (high ROI)
-- Always add/update tests, but only where they have high ROI:
+Testing policy (high ROI, test-first when practical)
+- For observable implementation behavior, first determine whether a practical, high-value deterministic black-box test can establish the expected outcome.
+- When such a test is appropriate, create or update it before implementing that behavior, run it and observe the expected failure, then implement until the test passes.
+- Do not force tests for documentation- or prompt-only changes, or behavior without a meaningful deterministic test. Explain the reason in the completion report and run applicable checks.
+- Add or update tests only where they have high ROI:
   - Prefer tests that cross meaningful boundaries (e.g., module/service/API boundaries), validate integrations, or cover high-risk interactions.
   - Add tests for tricky edge cases, regressions, concurrency/race conditions, error handling, permission/security checks, serialization, and other failure-prone areas.
   - Avoid tests that merely restate obvious behavior, duplicate low-value unit coverage, or tightly couple to implementation details.

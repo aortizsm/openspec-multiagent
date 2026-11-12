@@ -1,15 +1,14 @@
 # OpenCode OpenSpec Multi-Agent
 
 A multi-agent orchestrated development workflow built on [OpenSpec](https://openspec.dev).
-Every change starts from a written specification, is implemented by a dedicated agent,
-and passes independent code, security, and verification review before being archived.
-No code is written until the spec is approved.
+The standard `@architect` run uses the full review and verification gates. Its
+implementation and review pipeline starts at `@developer` after design approval.
 ![Node.js](https://img.shields.io/badge/node-%3E=20.19.0-green) ![OpenSpec CLI](https://img.shields.io/badge/openspec-%3E=1.14.0-blue) ![License](https://img.shields.io/badge/license-MIT-brightgreen) ![Tests](https://img.shields.io/badge/tests-passing-success)
 
 ## Features
 
 - Spec-first: every change is grounded in an OpenSpec spec (proposal, design, tasks)
-- Structured loop: architect → developer → reviewers → verifier → archive
+- Structured standard loop: architect → developer → test-engineer → parallel reviews → verifier → archive
 - Agents: architect, developer, code-reviewer, security-reviewer, verifier,
   test-engineer, ux-designer, repo-scout, diff-summarizer
 - Setup wizard: `npx openspec-multiagent init` or `node scripts/setup.mjs`
@@ -19,7 +18,7 @@ No code is written until the spec is approved.
 
 | Agent | Responsibilities | Access allowed | Access denied | Mode |
 |-------|-----------------|----------------|---------------|------|
-| **@architect** | Plans changes, writes OpenSpec specs, delegates work, approves reviews, archives changes; never writes source code. Drives the spec-driven loop. | Edit `openspec/**`, `AGENTS.md`, `opencode/agents/*`; read-only shell commands (`ls`, `cat`, `git status/diff/log/show`, `npm test`, `openspec validate`, `echo`); subagent, skill, read, glob, grep, webfetch, websearch on `*` | Edit `*` (denied: no source code edits outside OpenSpec/spec/agent files) | Primary (assisted or automatic execution mode) |
+| **@architect** | Plans and approves OpenSpec changes, directs the standard workflow, and archives. It never implements source changes; its prompt-level policy does not technically restrict shell use. | Edit `openspec/**`, `AGENTS.md`, `opencode/agents/*`; `shell *` (broad tool-level allow); subagent, skill, read, glob, grep, webfetch, websearch on `*` | Native edit outside the listed paths; prompt forbids implementing or mutating source code, but shell is not a sandbox | Primary (single-approval automatic workflow) |
 | **@developer** | Implements OpenSpec changes following repo conventions; YAGNI; clean code; adds high-ROI tests; validates before reporting. | Edit `*`; shell `*`; subagent `repo-scout`, `diff-summarizer`; skill, read, glob, grep on `*` | None explicit (edit and shell on `*` are allowed) | Subagent |
 | **@code-reviewer** | Reviews code against clean-code criteria (12 rules) and tests; approves or requests changes; never closes specs. | Git read-only (`status`, `diff`, `log`, `show`); `echo`, `ls`, `pwd`, `cat`; `openspec show/list`; test commands (`npm test`, `pytest`, `cargo test`, etc.); subagent `repo-scout`, `diff-summarizer`; skill, read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
 | **@security-reviewer** | Evaluates code against 12 security criteria; tags findings CRITICAL/WARNING/SUGGESTION; never modifies code. | Git read-only; `echo`, `ls`, `pwd`, `cat`, `head`, `tail`, `wc`; `grep -rn *`; `openspec show/list`; subagent `repo-scout`; skill, read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
@@ -29,30 +28,43 @@ No code is written until the spec is approved.
 | **@repo-scout** | Scans repository stack, conventions, and commands; read-only report; no files written. | `ls`; `git rev-parse`, `git ls-files`; `rg`; `cat`; read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
 | **@diff-summarizer** | Produces terse, high-signal summary of git diffs; flags risk hotspots; no fixes, no style review. | Git read-only (`status`, `diff`, `log`); read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only git commands listed) | Subagent |
 
+For the phase-by-phase workflow and each agent's triggers, outputs, and boundaries, see the [detailed agent workflow guide](docs/guides/agent-workflow.md).
+
 Modes: **primary** = drives the change loop and may run read-only verification commands; **subagent** = dispatched by @architect with full context, independent session with no prior conversation history.
+
+Standard full run (the implementation and review pipeline starts at `@developer`):
 
 ```mermaid
 flowchart LR
-    A("User asks for something")
-    B("@architect<br/>plans, writes specs,<br/>delegates, archives")
-    C("@developer<br/>implements the code")
-    D("@test-engineer<br/>writes tests")
-    E("@code-reviewer<br/>reviews clean code")
-    F("@security-reviewer<br/>reviews security")
-    G("@verifier<br/>runs commands and verifies")
-    H("@architect<br/>archives the change")
+    A("User asks for a change")
+    B("@architect<br/>presents completed design")
+    C("One user approval")
+    D("@developer<br/>implements the change")
+    E("@test-engineer<br/>writes tests")
+    F("@code-reviewer<br/>reviews code")
+    G("@security-reviewer<br/>reviews security")
+    H("@verifier<br/>runs commands and verifies")
+    I("@architect<br/>archives the change")
 
     A --> B
-    B --> C
-    C --> D
+    B --> C --> D
     D --> E
     E --> F
-    F --> G
+    E --> G
+    F --> H
     G --> H
+    H --> I
 
     B -.-> |UI| U("@ux-designer<br/>designs screens<br/>and tokens")
-    U -.-> C
+    U -.-> D
 ```
+
+`@architect` has a broad `shell *` permission at the OpenCode tool layer. Its
+prompt instructs it not to implement or mutate source code, but that instruction
+is not a technical shell sandbox. Every orchestrator run starts at `@developer`;
+`@test-engineer` completes before `@code-reviewer` and `@security-reviewer` run
+in parallel. The removed `--from` option is rejected. After correcting a failed
+run, invoke `node scripts/orchestrate.mjs <change-name>` again to rerun all gates.
 
 ## Requirements
 

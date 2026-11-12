@@ -6,12 +6,13 @@ import assert from "node:assert";
 import { EventEmitter } from "node:events";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
@@ -44,6 +45,26 @@ async function testAsync(name, fn) {
     failed += 1;
     console.log(`  ✗ ${name}`);
     console.log(`      ${err.message}`);
+  }
+}
+
+function writeContextBundleFixture(fixtureDir) {
+  const specsDir = join(fixtureDir, "specs");
+  mkdirSync(specsDir);
+  writeFileSync(join(fixtureDir, "proposal.md"), "# Proposal Fixture\nproposal marker\n");
+  writeFileSync(join(fixtureDir, "design.md"), "# Design Fixture\ndesign marker\n");
+  writeFileSync(join(fixtureDir, "tasks.md"), "# Tasks Fixture\ntasks marker\n");
+  writeFileSync(join(specsDir, "spec.md"), "# Spec Fixture\nspec marker\n");
+}
+
+function assertContextBundleFixture(bundle) {
+  assert.strictEqual(typeof bundle, "string");
+  assert.ok(bundle.length > 0, "bundle is empty");
+  for (const section of ["## Proposal", "## Design", "## Tasks", "## Spec", "## Git Diff"]) {
+    assert.ok(bundle.includes(section), `missing section: ${section}`);
+  }
+  for (const marker of ["proposal marker", "design marker", "tasks marker", "spec marker"]) {
+    assert.ok(bundle.includes(marker), `bundle missing fixture content: ${marker}`);
   }
 }
 
@@ -481,33 +502,14 @@ function stdoutStream({ tty = false } = {}) {
   // ------------------------------------------------------------------
   // contextBundle
   // ------------------------------------------------------------------
-  await testAsync("contextBundle returns a Markdown bundle string for orchestrate-refactor", async () => {
-    const bundle = await contextBundle("orchestrate-refactor");
-    assert.strictEqual(typeof bundle, "string");
-    assert.ok(bundle.length > 0, "bundle is empty");
-  });
-
-  await testAsync("contextBundle contains all five sections for orchestrate-refactor", async () => {
-    const bundle = await contextBundle("orchestrate-refactor");
-    for (const section of [
-      "## Proposal",
-      "## Design",
-      "## Tasks",
-      "## Spec",
-      "## Git Diff",
-    ]) {
-      assert.ok(bundle.includes(section), `missing section: ${section}`);
+  await testAsync("contextBundle includes artifacts from a temporary OpenSpec change", async () => {
+    const fixtureDir = mkdtempSync(join(process.cwd(), "openspec", "changes", "context-bundle-test-"));
+    try {
+      writeContextBundleFixture(fixtureDir);
+      assertContextBundleFixture(await contextBundle(basename(fixtureDir)));
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true });
     }
-  });
-
-  await testAsync("contextBundle contains proposal.md content (# Proposal) for orchestrate-refactor", async () => {
-    const bundle = await contextBundle("orchestrate-refactor");
-    assert.ok(bundle.includes("# Proposal"), "bundle missing proposal heading");
-  });
-
-  await testAsync("contextBundle contains design.md content (# Design) for orchestrate-refactor", async () => {
-    const bundle = await contextBundle("orchestrate-refactor");
-    assert.ok(bundle.includes("# Design"), "bundle missing design heading");
   });
 
   await testAsync("contextBundle exits with error for nonexistent change", async () => {
@@ -522,7 +524,7 @@ function stdoutStream({ tty = false } = {}) {
     try {
       let threw = false;
       try {
-        contextBundle("nonexistent-change");
+        contextBundle(`missing-context-bundle-${process.pid}-${Date.now()}`);
       } catch (err) {
         threw = true;
       }

@@ -1,0 +1,3 @@
+- [x] Modificar AGENTS.md: cambiar orden del loop a parallel-reviewers (code-reviewer + security-reviewer en paralelo después de developer)
+- [x] Actualizar documentación del loop en AGENTS.md para reflejar la ejecución en paralelo
+- [x] Verificar que el cambio no rompa el flujo existente
