@@ -130,6 +130,21 @@ Then start OpenCode in that directory and describe your change to `@architect`. 
 
 Daily commands (`setup`, `check`, `test`, `install-agents`, `reinstall`, `reset` and more) are listed in the [npm scripts](#npm-scripts) section below.
 
+### Optional per-project model routing
+
+The repository includes [`opencode.models.example.jsonc`](opencode.models.example.jsonc) as an **inactive** template. From this repository root, copy it into a target project using one recognized config filename:
+
+```bash
+cp opencode.models.example.jsonc /path/to/target-project/opencode.jsonc
+# Or use the project's .opencode directory:
+mkdir -p /path/to/target-project/.opencode
+cp opencode.models.example.jsonc /path/to/target-project/.opencode/opencode.jsonc
+```
+
+The root `model` defaults new primary sessions (including `@architect`) to `opencode-go/mimo-v2.6-flash`; an already-selected session model remains in effect. The `agents` overrides assign MiMo to `developer`, `test-engineer`, `verifier`, `ux-designer`, `repo-scout`, and `diff-summarizer`, and `opencode-go/glm-5.3-flash` to `code-reviewer` and `security-reviewer`. These model-only overrides merge with installed agent definitions; they do not replace their prompts or permissions. `@architect` uses the primary session model, not a subagent override.
+
+Connect OpenCode Go separately with `/connect`, then check `/models` for the configured IDs. Go usage limits are per model and vary by model; they are not one shared global spend cap. If enabled, Extra Usage may allow additional pay-as-you-go charges after included limits. The template does not enforce a spending cap. See the [agent workflow guide](docs/guides/agent-workflow.md) for details and current OpenCode references.
+
 ## Memory (Engram)
 
 Engram is the project's persistent memory. It stores agreed decisions, flow rules, and change context so work can resume across sessions without repeating announcements or losing state.

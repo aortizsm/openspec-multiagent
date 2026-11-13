@@ -1,0 +1,14 @@
+{
+  // Copy this example to opencode.jsonc or .opencode/opencode.jsonc to activate it.
+  "model": "opencode-go/mimo-v2.6-flash",
+  "agents": {
+    "developer": { "model": "opencode-go/mimo-v2.6-flash" },
+    "test-engineer": { "model": "opencode-go/mimo-v2.6-flash" },
+    "verifier": { "model": "opencode-go/mimo-v2.6-flash" },
+    "ux-designer": { "model": "opencode-go/mimo-v2.6-flash" },
+    "repo-scout": { "model": "opencode-go/mimo-v2.6-flash" },
+    "diff-summarizer": { "model": "opencode-go/mimo-v2.6-flash" },
+    "code-reviewer": { "model": "opencode-go/glm-5.3-flash" },
+    "security-reviewer": { "model": "opencode-go/glm-5.3-flash" }
+  }
+}

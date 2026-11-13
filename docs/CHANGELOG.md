@@ -4,6 +4,7 @@ Cambios archivados en orden cronológico inverso.
 
 <!-- latest start -->
 
+- **[2026-11-13] add-agent-model-routing-template** — Añade una plantilla JSONC no activa para asignar modelos Go al default de sesión y a los ocho subagentes; documenta la copia explícita, `/connect`, los límites por modelo y Extra Usage. ([entrada](changes/2026-11-13-add-agent-model-routing-template.md)) · ([guía](guides/agent-workflow.md))
 - **[2026-11-12] test-first-for-observable-behavior** — `@developer` aplica test-first condicional para comportamiento observable y `@test-engineer` complementa la cobertura sin duplicarla; añade una guía detallada en inglés para los nueve agentes y traduce completamente al inglés las specs principales `multiagent-workflow` y `project-documentation`. ([entrada](changes/2026-11-12-test-first-for-observable-behavior.md)) · ([guía](guides/agent-workflow.md))
 - **[2026-11-12] consolidate-review-feedback** — Consolida los hallazgos de calidad y verificación en un bundle trazable, con ledger por change y máximo tres rondas; un `FAIL` del verifier tras la tercera se reporta sin otra ronda ni archivo. ([entrada](changes/2026-11-12-consolidate-review-feedback.md)) · ([guía](guides/independent-verification.md))
 - **[2026-11-12] sequence-test-engineer-and-remove-resume** — Ejecuta `@test-engineer` antes de las revisiones paralelas y elimina el reinicio por fase; cada reejecución comienza en `@developer`. ([entrada](changes/2026-11-12-sequence-test-engineer-and-remove-resume.md)) · ([guía](guides/independent-verification.md))

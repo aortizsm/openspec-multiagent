@@ -49,3 +49,29 @@ After a quality phase, `@architect` sends one consolidated, traceable correction
 ## Source of truth
 
 The installed prompts in `opencode/agents/`, the current OpenSpec change, `AGENTS.md`, and the applicable OpenSpec specs define exact permissions and gates. When this overview and those sources differ, follow the authoritative prompt and spec. The broader project documentation is Spanish by default; this guide is in English at the user's explicit request for this individual document.
+
+## Optional per-project model routing
+
+The repository-root file `opencode.models.example.jsonc` is a copyable example, not an active OpenCode config. OpenCode discovers project configuration under `opencode.json`/`opencode.jsonc` or `.opencode/opencode.json`/`.opencode/opencode.jsonc`; it does not load the example filename. From the repository root, copy it into the target project using either supported path:
+
+```bash
+cp opencode.models.example.jsonc /path/to/target-project/opencode.jsonc
+# Or:
+mkdir -p /path/to/target-project/.opencode
+cp opencode.models.example.jsonc /path/to/target-project/.opencode/opencode.jsonc
+```
+
+The template's root `model` is the default for new primary sessions. It uses `opencode-go/mimo-v2.6-flash`, so a new primary `@architect` session starts with MiMo unless the session already has a model selected. Root defaults do not replace a model already selected for an existing session.
+
+The eight subagent overrides are:
+
+| Agent IDs | Model |
+|---|---|
+| `developer`, `test-engineer`, `verifier`, `ux-designer`, `repo-scout`, `diff-summarizer` | `opencode-go/mimo-v2.6-flash` |
+| `code-reviewer`, `security-reviewer` | `opencode-go/glm-5.3-flash` |
+
+The `agents.<id>.model` entries add model overrides to the installed agents. They do not replace globally installed prompt text or permissions. The `@architect` role is the primary session, not a subagent entry; set or select its model with the root default/session selection.
+
+Connect provider access separately in OpenCode with `/connect`, choose OpenCode Go, and use `/models` to confirm the model IDs are available. The example contains no provider credentials. OpenCode Go usage limits are tracked per model, and included limits vary by model rather than forming a shared global cap. Enabling Extra Usage may permit additional pay-as-you-go charges after included limits are reached; this template imposes no global spending cap. Check the [current Go usage and billing terms](https://opencode.ai/docs/console/go/) before enabling Extra Usage.
+
+For configuration discovery and model merging, see OpenCode's [configuration](https://opencode.ai/docs/config/), [agents](https://opencode.ai/docs/agents/), [models](https://opencode.ai/docs/models/), and [provider connection](https://opencode.ai/docs/providers/) documentation.

@@ -29,6 +29,19 @@ import {
 
 import { contextBundle } from "../scripts/context-bundle.mjs";
 
+const MIMO_MODEL_ID = "opencode-go/mimo-v2.6-flash";
+const GLM_MODEL_ID = "opencode-go/glm-5.3-flash";
+const EXPECTED_AGENT_MODELS = {
+  developer: MIMO_MODEL_ID,
+  "test-engineer": MIMO_MODEL_ID,
+  verifier: MIMO_MODEL_ID,
+  "ux-designer": MIMO_MODEL_ID,
+  "repo-scout": MIMO_MODEL_ID,
+  "diff-summarizer": MIMO_MODEL_ID,
+  "code-reviewer": GLM_MODEL_ID,
+  "security-reviewer": GLM_MODEL_ID,
+};
+
 let passed = 0;
 let failed = 0;
 
@@ -109,7 +122,25 @@ function stdoutStream({ tty = false } = {}) {
   return new MockStdout({ tty });
 }
 
+function assertModelRoutingConfig(modelConfig) {
+  assert.strictEqual(modelConfig.model, MIMO_MODEL_ID);
+  assert.deepStrictEqual(Object.keys(modelConfig).sort(), ["agents", "model"]);
+  assertAgentModelAssignments(modelConfig.agents);
+}
+
+function assertAgentModelAssignments(agentModels) {
+  assert.deepStrictEqual(Object.keys(agentModels).sort(), Object.keys(EXPECTED_AGENT_MODELS).sort());
+  for (const [agentId, modelId] of Object.entries(EXPECTED_AGENT_MODELS)) {
+    assert.deepStrictEqual(agentModels[agentId], { model: modelId });
+  }
+}
+
 (async () => {
+  await testAsync("model-routing example maps all bundled roles without credentials", () => {
+    const { data: modelConfig } = readJsonc(join(process.cwd(), "opencode.models.example.jsonc"));
+    assertModelRoutingConfig(modelConfig);
+  });
+
   // ------------------------------------------------------------------
   // isInteractive
   // ------------------------------------------------------------------
