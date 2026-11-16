@@ -1,0 +1,32 @@
+{
+  // TEMPLATE inactivo ClinePass ($9.99/mes). Copiar a opencode.json para activar. Requiere export CLINE_API_KEY + saldo Credits (el plan solo cubre clientes Cline, no API externa) + elegir en /models lo etiquetado ClinePass.
+  // Tabla oficial: mimo-v2.6-pro $0.435/$0.87; mimo-v2.6-flash $0.14/$0.28; deepseek-v4.1-flash $0.15/$0.60; glm-5.3-flash $0.15/$0.50; muse-spark-1.3-contributor $0.10/$0.20 (el más barato).
+  // IDs reales (dueño/modelo) verificados contra catálogo GET /v1/models + prueba del usuario.
+  "model": "cline-pass/mimo-v2.6-pro",
+  "providers": {
+    "cline-pass": {
+      "name": "ClinePass",
+      "env": ["CLINE_API_KEY"],
+      "package": "@ai-sdk/openai-compatible",
+      "settings": { "baseURL": "https://api.cline.bot/api/v1" },
+      "headers": { "X-Response-Format": "openai" },
+      "models": {
+        "mimo-v2.6-pro": { "modelID": "xiaomi/mimo-v2.6-pro", "name": "MiMo V2.6 Pro", "capabilities": { "tools": true, "input": ["text"], "output": ["text"] } },
+        "mimo-v2.6-flash": { "modelID": "xiaomi/mimo-v2.6-flash", "name": "MiMo V2.6 Flash", "capabilities": { "tools": true, "input": ["text"], "output": ["text"] } },
+        "deepseek-v4.1-flash": { "modelID": "deepseek/deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash", "capabilities": { "tools": true, "input": ["text"], "output": ["text"] } },
+        "glm-5.3-flash": { "modelID": "z-ai/glm-5.3-flash", "name": "GLM 5.3 Flash", "capabilities": { "tools": true, "input": ["text"], "output": ["text"] } },
+        "muse-spark-1.3-contributor": { "modelID": "meta/muse-spark-1.3-contributor", "name": "Muse Spark 1.3 Contributor", "capabilities": { "tools": true, "input": ["text"], "output": ["text"] } }
+      }
+    }
+  },
+  "agents": {
+    "developer": { "model": "cline-pass/mimo-v2.6-pro" },
+    "test-engineer": { "model": "cline-pass/mimo-v2.6-flash" },
+    "verifier": { "model": "cline-pass/muse-spark-1.3-contributor" },
+    "repo-scout": { "model": "cline-pass/deepseek-v4.1-flash" },
+    "diff-summarizer": { "model": "cline-pass/muse-spark-1.3-contributor" },
+    "ux-designer": { "model": "cline-pass/mimo-v2.6-flash" },
+    "code-reviewer": { "model": "cline-pass/glm-5.3-flash" },
+    "security-reviewer": { "model": "cline-pass/glm-5.3-flash" }
+  }
+}
