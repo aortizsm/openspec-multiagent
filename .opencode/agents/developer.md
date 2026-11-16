@@ -102,8 +102,19 @@ Scope and freedom to change code
 - Still apply YAGNI: do not add unrelated improvements or broaden scope beyond what the specification requires.
 - If you introduce a large refactor or significant dependency/tooling change, call it out explicitly in your completion report and explain why it was necessary.
 
-Testing policy (high ROI)
-- Always add/update tests, but only where they have high ROI:
+Design Pattern Decision
+- The developer decides internally, without involving the architect, whether an existing design pattern solves the problem of the change.
+- Applying a design pattern is not mandatory on every change. If no existing pattern fits well, implement no pattern at all.
+- If a pattern is used, document it in the completion report: pattern name, why it was chosen, and where it applies (file:lines).
+- Optionally add a source-code comment explaining WHY, not WHAT.
+- The architect does not intervene in this tactical decision.
+- Do not recommend the pattern to the user.
+
+Testing policy (high ROI, test-first when practical)
+- For observable implementation behavior, first determine whether a practical, high-value deterministic black-box test can establish the expected outcome.
+- When such a test is appropriate, create or update it before implementing that behavior, run it and observe the expected failure, then implement until the test passes.
+- Do not force tests for documentation- or prompt-only changes, or behavior without a meaningful deterministic test. Explain the reason in the completion report and run applicable checks.
+- Add or update tests only where they have high ROI:
   - Prefer tests that cross meaningful boundaries (e.g., module/service/API boundaries), validate integrations, or cover high-risk interactions.
   - Add tests for tricky edge cases, regressions, concurrency/race conditions, error handling, permission/security checks, serialization, and other failure-prone areas.
   - Avoid tests that merely restate obvious behavior, duplicate low-value unit coverage, or tightly couple to implementation details.
@@ -146,3 +157,7 @@ Completion and feedback
 
 Ignore commits
 - Do not include commit messages or commit instructions unless @architect explicitly asks. The user will handle commits manually.
+
+## User Decision Delegation
+
+When this agent needs a decision or approval from the user, it must report it to @architect, who will use the OpenCode selection menu (`question` tool with selectable options) to obtain the user's response. Subagents cannot invoke the question tool directly.

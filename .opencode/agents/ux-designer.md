@@ -248,3 +248,7 @@ When generating wireframes or design specs:
 - When no existing design system exists, propose one following the tokens above
 - When the spec has no UI requirements, note it as SUGGESTION (spec should include UX)
 - Always check existing UI patterns in the codebase before proposing new ones
+
+## User Decision Delegation
+
+When this agent needs a decision or approval from the user, it must report it to @architect, who will use the OpenCode selection menu (`question` tool with selectable options) to obtain the user's response. Subagents cannot invoke the question tool directly.

@@ -511,6 +511,58 @@ export function removeAgentFiles(dir, { dryRun = false } = {}) {
 }
 
 /**
+ * Compare the source agent definitions (opencode/agents/*.md) against the
+ * installed copies (.opencode/agents/*.md) and report drift.
+ *
+ * Returns an array of objects { kind: 'drifted' | 'orphan', name: string }
+ *   - 'drifted': installed copy exists and differs from its source
+ *   - 'orphan': installed copy exists but has no matching source file
+ *
+ * An empty array means all installed copies are byte-identical to their sources
+ * and no installed copy lacks a source.
+ */
+export function findDriftedAgentDefinitions() {
+  const srcDir = AGENTS_SRC_DIR;
+  const instDir = agentsDir();
+
+  let sourceNames = [];
+  if (existsSync(srcDir)) {
+    sourceNames = readdirSync(srcDir)
+      .filter((f) => f.endsWith('.md'))
+      .map((f) => f.replace(/\.md$/, ''));
+  }
+
+  let installedNames = [];
+  if (existsSync(instDir)) {
+    installedNames = readdirSync(instDir)
+      .filter((f) => f.endsWith('.md'))
+      .map((f) => f.replace(/\.md$/, ''));
+  }
+
+  const sourceSet = new Set(sourceNames);
+  const findings = [];
+
+  for (const name of sourceNames) {
+    const srcPath = join(srcDir, `${name}.md`);
+    const instPath = join(instDir, `${name}.md`);
+    if (!existsSync(instPath)) continue;
+    const srcContent = readFileSync(srcPath, 'utf8');
+    const instContent = readFileSync(instPath, 'utf8');
+    if (srcContent !== instContent) {
+      findings.push({ kind: 'drifted', name });
+    }
+  }
+
+  for (const name of installedNames) {
+    if (!sourceSet.has(name)) {
+      findings.push({ kind: 'orphan', name });
+    }
+  }
+
+  return findings;
+}
+
+/**
  * Remove MCP server entries (`mcpNames`) from the config at `configPath`.
  * Returns the number removed. Exits with an error on JSONC configs.
  * Respects dry-run mode: only logs when `dryRun` is true, never writes.

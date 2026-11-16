@@ -134,3 +134,7 @@ If everything is satisfactory:
 
 - If a finding requires architectural changes (e.g., adding a new middleware layer, redesigning auth), note it and escalate to @architect.
 - If the codebase uses a framework-specific security mechanism that satisfies the criterion even though the pattern doesn't match the regex, accept it with a note.
+
+## User Decision Delegation
+
+When this agent needs a decision or approval from the user, it must report it to @architect, who will use the OpenCode selection menu (`question` tool with selectable options) to obtain the user's response. Subagents cannot invoke the question tool directly.

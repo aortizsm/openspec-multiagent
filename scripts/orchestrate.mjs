@@ -146,7 +146,7 @@ function runAgent(agent, changeName) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log(`\n=== Running ${agent} for change "${changeName}" (attempt ${attempt}/${MAX_RETRIES}) ===`);
 
-    const agentResult = runCommand('npx', ['opencode', 'run', '-a', agent, '--', changeName], {
+    const agentResult = runCommand('opencode', ['run', '--agent', agent, '--', changeName], {
       env: buildAgentEnv(changeName, agent),
     });
 
@@ -171,8 +171,8 @@ function runAgent(agent, changeName) {
 function spawnAgent(agent, changeName) {
   console.log(`\n=== Running ${agent} for change "${changeName}" ===`);
   return spawn(
-    'npx',
-    ['opencode', 'run', '-a', agent, '--', changeName],
+    'opencode',
+    ['run', '--agent', agent, '--', changeName],
     {
       cwd: PROJECT_ROOT,
       env: buildAgentEnv(changeName, agent),
@@ -332,6 +332,62 @@ function validateDesignFields(changeDir) {
       );
     }
   }
+}
+function isLedgerHeader(line) {
+  const columns = line.split('|').map(c => c.trim().toLowerCase());
+  return columns.length >= 8
+    && columns[0] === 'id'
+    && columns[2] === 'severity'
+    && columns.some(c => c.includes('evidence'));
+}
+
+function readLedgerSectionWithoutHeader(sectionLines) {
+  const tableRows = sectionLines.filter(
+    line => line.startsWith('|') && line.endsWith('|')
+  );
+  if (tableRows.length > 0) {
+    throw new Error('Review Findings section has no valid ledger table in tasks.md.');
+  }
+  return { exists: true, rows: [] };
+}
+
+function parseReviewLedgerContent(taskContent) {
+  const lines = taskContent.split('\n');
+  let inLedger = false;
+  let headerFound = false;
+  let rows = [];
+
+  for (const line of lines) {
+    if (line.trim() === '## Review Findings') {
+      inLedger = true;
+      continue;
+    }
+    if (inLedger) {
+      if (line.startsWith('## ')) {
+        break;
+      }
+      if (!headerFound) {
+        if (line.startsWith('|') && line.endsWith('|')) {
+          if (isLedgerHeader(line)) {
+            headerFound = true;
+          } else {
+            throw new Error('Review Findings section has no valid ledger table in tasks.md.');
+          }
+        } else if (line.startsWith('|') || line.endsWith('|')) {
+          throw new Error('Review Findings section has no valid ledger table in tasks.md.');
+        }
+        continue;
+      }
+      if (line.startsWith('|') && line.endsWith('|')) {
+        const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+        if (cells.length > 0 && cells[0] !== '---') {
+          rows.push(cells);
+        }
+      }
+    }
+  }
+
+  return { headerFound, rows };
 }
 
 export { designGate, validateProposalSections };

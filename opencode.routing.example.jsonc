@@ -1,0 +1,91 @@
+// Ejemplo de routing de modelos por agente para OpenCode.
+// Copiar a ~/.config/opencode/opencode.json para activar.
+//
+// architect/orchestrator -> cline-pass/deepseek-v4.1-flash-1017
+// todos los demás agentes -> nvidia/nemotron-3.5-super-vl-120b-a12b
+//
+// Requisito: tener NVIDIA_API_KEY y CLINE_API_KEY configuradas en tu entorno.
+
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "default_agent": "architect",
+  "providers": {
+    "nvidia": {
+      "name": "NVIDIA NIM",
+      "package": "@ai-sdk/openai-compatible",
+      "settings": {
+        "baseURL": "https://integrate.api.nvidia.com/v1"
+      },
+      "models": {
+        "nemotron-3.5-super-vl-120b-a12b": {
+          "modelID": "nemotron-3.5-super-vl-120b-a12b",
+          "capabilities": {
+            "tools": true,
+            "input": ["text"],
+            "output": ["text"]
+          }
+        }
+      }
+    },
+    "cline-pass": {
+      "name": "ClinePass",
+      "package": "@ai-sdk/openai-compatible",
+      "settings": {
+        "baseURL": "https://api.cline.bot/api/v1"
+      },
+      "headers": {
+        "X-Response-Format": "openai"
+      },
+      "models": {
+        "deepseek-v4.1-flash-1017": {
+          "modelID": "cline-pass/deepseek-v4.1-flash-1017",
+          "capabilities": {
+            "tools": true,
+            "input": ["text"],
+            "output": ["text"]
+          }
+        }
+      }
+    }
+  },
+  "agents": {
+    "architect": {
+      "mode": "primary",
+      "model": "cline-pass/deepseek-v4.1-flash-1017",
+      "description": "Architects whole implementations. Drives the spec-driven loop; never writes code."
+    },
+    "developer": {
+      "mode": "subagent",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    },
+    "test-engineer": {
+      "mode": "subagent",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    },
+    "code-reviewer": {
+      "mode": "subagent",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    },
+    "security-reviewer": {
+      "mode": "subagent",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    },
+    "verifier": {
+      "mode": "subagent",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    },
+    "diff-summarizer": {
+      "mode": "subagent",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    },
+    "repo-scout": {
+      "mode": "subagent",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    },
+    "ux-designer": {
+      "mode": "subagent",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    }
+  }
+}
