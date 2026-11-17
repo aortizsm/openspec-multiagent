@@ -191,6 +191,19 @@ if (DRY_RUN) agentsArgs.push("--dry-run");
   }
 }
 
+info("User-global TUI model selector");
+const modelPluginArgs = [join(SCRIPT_DIR, "install-agent-models.mjs")];
+if (DRY_RUN) modelPluginArgs.push("--dry-run");
+const modelPluginInstall = spawnSync(process.execPath, modelPluginArgs, {
+  stdio: "inherit",
+  cwd: projectDir,
+  shell: false,
+});
+if (modelPluginInstall.status !== 0) {
+  console.error("\nERROR: could not install the user-global agent model selector.");
+  process.exit(1);
+}
+
 // ---------------------------------------------------------------------------
 // Step 3: CodeGraph MCP server (mandatory)
 // ---------------------------------------------------------------------------

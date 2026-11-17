@@ -18,7 +18,7 @@ implementation and review pipeline starts at `@developer` after design approval.
 
 | Agent | Responsibilities | Access allowed | Access denied | Mode |
 |-------|-----------------|----------------|---------------|------|
-| **@architect** | Plans and approves OpenSpec changes, directs the standard workflow, and archives. It never implements source changes; its prompt-level policy does not technically restrict shell use. | Edit `openspec/**`, `AGENTS.md`, `opencode/agents/*`; `shell *` (broad tool-level allow); subagent, skill, read, glob, grep, webfetch, websearch on `*` | Native edit outside the listed paths; prompt forbids implementing or mutating source code, but shell is not a sandbox | Primary (single-approval automatic workflow) |
+| **@architect** | Plans and approves OpenSpec changes, directs the standard workflow, and archives. It never implements source changes; it can perform user-requested read-only database reviews and verify expected records using existing project configuration and query tools. It binds every untrusted filter value, pauses if the client cannot bind it, validates and quotes identifiers from trusted schema metadata, avoids interpolating untrusted text into SQL or shell commands, and protects credentials and relevant output. Its prompt-level policy does not technically restrict shell use. | Edit `openspec/**`, `AGENTS.md`, `opencode/agents/*`; `shell *` (broad tool-level allow); subagent, skill, read, glob, grep, webfetch, websearch on `*` | Native edit outside the listed paths; prompt forbids implementing or mutating source code, but shell is not a sandbox | Primary (single-approval automatic workflow) |
 | **@developer** | Implements OpenSpec changes following repo conventions; YAGNI; clean code; adds high-ROI tests; validates before reporting. | Edit `*`; shell `*`; subagent `repo-scout`, `diff-summarizer`; skill, read, glob, grep on `*` | None explicit (edit and shell on `*` are allowed) | Subagent |
 | **@code-reviewer** | Reviews code against clean-code criteria (12 rules) and tests; approves or requests changes; never closes specs. | Git read-only (`status`, `diff`, `log`, `show`); `echo`, `ls`, `pwd`, `cat`; `openspec show/list`; test commands (`npm test`, `pytest`, `cargo test`, etc.); subagent `repo-scout`, `diff-summarizer`; skill, read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
 | **@security-reviewer** | Evaluates code against 12 security criteria; tags findings CRITICAL/WARNING/SUGGESTION; never modifies code. | Git read-only; `echo`, `ls`, `pwd`, `cat`, `head`, `tail`, `wc`; `grep -rn *`; `openspec show/list`; subagent `repo-scout`; skill, read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only commands listed) | Subagent |
@@ -29,6 +29,7 @@ implementation and review pipeline starts at `@developer` after design approval.
 | **@diff-summarizer** | Produces terse, high-signal summary of git diffs; flags risk hotspots; no fixes, no style review. | Git read-only (`status`, `diff`, `log`); read, glob, grep on `*` | Edit `*`; shell `*` (denied except read-only git commands listed) | Subagent |
 
 For the phase-by-phase workflow and each agent's triggers, outputs, and boundaries, see the [detailed agent workflow guide](docs/guides/agent-workflow.md).
+For database review scope and safe use, see the [architect database review guide](docs/guides/architect-database-review.md).
 
 Modes: **primary** = drives the change loop and may run read-only verification commands; **subagent** = dispatched by @architect with full context, independent session with no prior conversation history.
 
@@ -126,11 +127,32 @@ In the project where you want to use the workflow — not in this repo — run:
 npx openspec-multiagent init
 ```
 
-Then start OpenCode in that directory and describe your change to `@architect`. @architect turns it into an OpenSpec spec and the change loop begins.
+Initialization installs the bundled agents under `.opencode/agents/` and the `/agent-models` TUI plugin once under the user's global OpenCode plugins directory (`$XDG_CONFIG_HOME/opencode/plugins/agent-models/`, or `~/.config/opencode/plugins/agent-models/` by default; Windows uses `%APPDATA%\opencode\plugins\agent-models\`). The selector is then available in other projects without a project-local plugin copy. Model assignments remain in each active project's OpenCode config. Then start OpenCode in the target directory and describe your change to `@architect`. @architect turns it into an OpenSpec spec and the change loop begins.
 
 Daily commands (`setup`, `check`, `test`, `install-agents`, `reinstall`, `reset` and more) are listed in the [npm scripts](#npm-scripts) section below.
 
 ### Optional per-project model routing
+
+After initialization, run `/agent-models` in any project's OpenCode TUI to choose a bundled role, then select from the models OpenCode currently exposes to `/models` at that project location. Subagents may also select one of their model's available variants or `Default (no variant)`; `@architect` offers models only because the project root `model` setting does not persist a variant.
+
+Assignments are saved only to the active project's recognized config files (`opencode.json`/`opencode.jsonc` or `.opencode/opencode.json`/`.opencode/opencode.jsonc`). If none exists, the selector creates `.opencode/opencode.jsonc`. Subagent choices use `agents.<id>.model`. Saving an `@architect` choice requires confirmation: it changes the project default for all primary agents in new sessions, but does not change an already-open session. Cancelling a dialog leaves configuration unchanged. If the catalog is empty/unavailable or a config cannot be safely updated, the selector explains the problem without saving. User-level OpenCode configuration is not changed by the selector.
+
+Existing model selectors may be strings or OpenCode objects; the menu displays either and saves replacements as validated `provider/model[#variant]` strings. Race-resistant file operations require Linux with `/proc/self/fd`; on platforms without it, the selector and installer fail closed without writing.
+
+The standalone installer targets the same global plugin directory. Use `--dry-run` to preview it or `--force` to refresh an existing copy:
+
+```bash
+npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-install-agent-models --dry-run
+npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-install-agent-models
+npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-install-agent-models --force
+```
+
+Older toolkit-managed copies may remain in `.opencode/plugins/agent-models/`; they are not removed automatically. Inspect that directory first, and manually remove it only if you have confirmed it contains no custom files or edits. The installer never deletes project-local copies.
+
+```bash
+# From the target project, only after confirming this copy has no custom files or edits:
+rm -rf .opencode/plugins/agent-models
+```
 
 The repository includes [`opencode.models.example.jsonc`](opencode.models.example.jsonc) as an **inactive** template. From this repository root, copy it into a target project using one recognized config filename:
 
@@ -165,6 +187,7 @@ Flow rules saved in Engram prevent announcement loops: execute first, announce l
 | `npm run check` | Preflight check (Node, OpenSpec, Context7, MCP servers) |
 | `npm run test` | Run the project test suite |
 | `npm run install-agents` | Copy agent definitions without touching OpenSpec |
+| `npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-install-agent-models` | Install the user-global `/agent-models` plugin; supports `--dry-run` and `--force` |
 | `npm run install-context7` | Configure only Context7 |
 | `npm run install-engram` | Install/configure Engram local memory |
 | `npm run reinstall` | Reinstall agents + MCP servers (overwrites existing) |

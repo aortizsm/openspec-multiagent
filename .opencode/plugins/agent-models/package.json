@@ -1,0 +1,21 @@
+{
+  "name": "openspec-multiagent-agent-models",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./tui": "./tui.js"
+  },
+  "files": [
+    "index.js",
+    "tui.js",
+    "routing.mjs",
+    "project-config.mjs",
+    "model-reference.mjs",
+    "secure-project-fs.mjs",
+    "safety-limits.mjs"
+  ],
+  "dependencies": {
+    "@opencode/plugin": "latest"
+  }
+}

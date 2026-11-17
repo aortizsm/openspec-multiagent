@@ -6,7 +6,7 @@ This guide describes the standard OpenSpec workflow and the boundaries of the ni
 
 1. **`@architect` prepares the change.** It clarifies the request, creates the OpenSpec proposal, design, specs, and tasks, and presents the completed design for one explicit user approval. No delegated agent starts before that approval.
 2. **Conditional UI design.** For a change with UI/UX requirements, `@architect` invokes `@ux-designer` before implementation. The designer reviews the requirements and provides design recommendations; it does not edit code.
-3. **`@developer` implements.** For observable behavior with a practical, high-value deterministic black-box test, the developer writes or updates the test first, observes the expected failure, then implements until it passes. If no meaningful deterministic test is appropriate, the developer explains why in the completion report and runs applicable checks. Documentation- and prompt-only work does not get a forced test.
+3. **`@developer` implements in two internal stages.** In the functional stage, it keeps correctness and security active, uses conditional test-first for observable behavior when a practical, high-value deterministic black-box test exists, and reaches green applicable tests/checks. If no meaningful deterministic test applies, it records why and runs applicable checks. Only then does it perform a focused, behavior-preserving clean-code refinement against all 12 criteria, without speculative performance tuning unless a requirement or measured bottleneck justifies it. It reruns applicable tests/checks after refinement and hands off only when the criteria and checks pass. These internal stages do not add or reorder external agents.
 4. **`@test-engineer` complements coverage.** After implementation, it compares existing tests—including developer-authored tests—with the OpenSpec scenarios. It reuses adequate coverage and adds only missing high-value scenario or edge-case tests. For a scenario without a meaningful deterministic test, it records that status with a rationale rather than forcing a test. It does not execute tests.
 5. **Parallel reviews.** After the test-engineer finishes, `@code-reviewer` and `@security-reviewer` review in parallel. Neither can modify files; they return approval or actionable findings.
 6. **`@verifier` independently checks the change.** Only after the test-engineer and both reviewers succeed, the verifier runs the project's permitted test/build/lint/typecheck commands and reports evidence per scenario.
@@ -51,6 +51,41 @@ After a quality phase, `@architect` sends one consolidated, traceable correction
 The installed prompts in `opencode/agents/`, the current OpenSpec change, `AGENTS.md`, and the applicable OpenSpec specs define exact permissions and gates. When this overview and those sources differ, follow the authoritative prompt and spec. The broader project documentation is Spanish by default; this guide is in English at the user's explicit request for this individual document.
 
 ## Optional per-project model routing
+
+### Interactive model selector
+
+`npx openspec-multiagent init` installs the TUI plugin once under the user's global OpenCode plugin directory: `$XDG_CONFIG_HOME/opencode/plugins/agent-models/`, or the default OpenCode config directory (`~/.config/opencode` on macOS/Linux, `%APPDATA%/opencode` on Windows). Re-running initialization skips an existing global copy. OpenCode discovers this plugin across projects, so initialization does not create a project-local `.opencode/plugins/agent-models/` copy.
+
+The standalone installer uses the same destination. Run these commands from any project to preview, install, or explicitly refresh the global copy:
+
+```bash
+npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-install-agent-models --dry-run
+npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-install-agent-models
+npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-install-agent-models --force
+```
+
+The installer does not edit the user's global `opencode.json` or `cli.json`. It also does not remove older project-local copies. If `.opencode/plugins/agent-models/` is known to be a toolkit-managed copy, inspect it and remove it manually only after confirming it contains no custom files or edits:
+
+```bash
+# From the target project, only after confirming this copy has no custom files or edits:
+rm -rf .opencode/plugins/agent-models
+```
+
+Never remove an uncertain or customized directory.
+
+In any project, run `/agent-models` in OpenCode to view the bundled roles and their current assignments, including configured model IDs that are not currently available.
+
+The selector refreshes OpenCode's model catalog for the active project location and offers only models available to `/models`. For a subagent, it also offers the model's available variants and `Default (no variant)`. `@architect` offers models without variants because the root project `model` setting does not persist one.
+
+For safety, project config is limited to 1 MiB and 64 nesting levels; catalogs are limited to 2,000 models and each model to 256 variants. Exceeding a limit displays an error and leaves the assignment unchanged.
+
+Subagent assignments are written to `agents.<id>.model`. Existing OpenCode model selectors in string or object form are displayed; a replacement is saved as a validated `provider/model[#variant]` string. Selecting `@architect` requires explicit confirmation and sets the project root `model`, which applies to all primary agents in newly created sessions; an already-open session keeps its selected model. The globally installed selector reads the model catalog at the active project location and writes only that project's effective recognized configuration, preserving unrelated JSONC settings/comments. If no recognized config exists, it creates `.opencode/opencode.jsonc`. Assignments are never stored in user-level configuration, so projects remain independent. Escape or cancel at any point before saving leaves configuration unchanged. An empty or unavailable catalog, invalid config, or write failure is reported without a success message or partial config write.
+
+If multiple recognized configs exist, the selector updates the project file OpenCode merges last: `.opencode/` configs override project-root configs; within `.opencode/`, `opencode.jsonc` follows `opencode.json`, while at project root `opencode.json` follows `opencode.jsonc`.
+
+The GitHub package source works without publishing or changing the package's `private` setting. Existing global plugin copies are skipped unless `--force` is supplied; `--dry-run` shows the global target without writing.
+
+Race-resistant plugin installation and model persistence use Linux `/proc/self/fd` descriptor-relative operations. On platforms without this facility, installation fails without copying the global plugin, and selection fails without changing project configuration.
 
 The repository-root file `opencode.models.example.jsonc` is a copyable example, not an active OpenCode config. OpenCode discovers project configuration under `opencode.json`/`opencode.jsonc` or `.opencode/opencode.json`/`.opencode/opencode.jsonc`; it does not load the example filename. From the repository root, copy it into the target project using either supported path:
 

@@ -5,11 +5,13 @@
   "private": true,
   "type": "module",
   "bin": {
-    "openspec-multiagent": "scripts/init.mjs"
+    "openspec-multiagent": "scripts/init.mjs",
+    "openspec-multiagent-install-agent-models": "scripts/install-agent-models.mjs"
   },
   "files": [
     "scripts/",
     "opencode/agents/",
+    "opencode/plugins/",
     "README.md"
   ],
   "engines": {
@@ -25,7 +27,7 @@
     "install-codegraph": "codegraph install --target=opencode --location=global --yes && codegraph init --yes",
     "reinstall": "node scripts/reinstall.mjs",
     "reset": "node scripts/reset.mjs",
-    "test": "node tests/run.mjs && node tests/lib.test.mjs",
+    "test": "node tests/run.mjs && node tests/lib.test.mjs && node tests/agent-model-plugin.test.mjs",
     "rollback": "node scripts/rollback.mjs rollback",
     "rollback:save": "node scripts/rollback.mjs save",
     "context-bundle": "node scripts/context-bundle.mjs",

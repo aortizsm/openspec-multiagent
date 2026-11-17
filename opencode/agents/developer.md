@@ -76,7 +76,7 @@ Before writing the first line, examine the existing codebase:
 - Test style: How are existing tests structured? (naming conventions, assertion utilities, test organization)
 - Configuration: What's in the project manifest and lockfile? What libraries and frameworks are available?
 - Patterns: How do existing components / modules look? Match their style exactly.
-- Clean Code (objective rules from `clean-code-criteria` spec):
+- Clean Code (objective rules from `clean-code-criteria` spec; final-delivery requirements reviewed systematically in the clean-code refinement stage after the functional stage is green):
   - **Names**: forbidden — `data`, `info`, `result`, `temp`, `item`, `value`, `obj`, `val`, `res`, `arr`, `list`, `handle`, `process`, `util`, `helper`, `doSomething`, `thing`, `stuff`. Must contain a descriptive noun.
   - **Length**: max 30 lines/function. If > 15 lines, split into helpers of max 15 lines.
   - **SRP**: no combining validation + transformation + persistence in one function.
@@ -92,6 +92,11 @@ Before writing the first line, examine the existing codebase:
   - **Security (objective rules from `security-criteria` spec)**: no hardcoded secrets, parameterized SQL queries, escaped HTML output, input validation on all endpoints, auth guards on state-changing routes, no `eval()`/`exec()` with user input, path validation for file operations, no sensitive data in error output, CSRF on POST/PUT/DELETE/PATCH, bcrypt/argon2 for passwords, HttpOnly/Secure/SameSite cookies, `X-Content-Type-Options` and `X-Frame-Options` headers.
 
 Your code must look like it was written by the same team that wrote the rest of the codebase.
+
+Implementation stages
+- **Functional stage:** implement the requested behavior with the smallest reasonable change. Correctness and security remain active throughout both stages; do not knowingly leave incorrect or insecure code for refinement. Keep the conditional test-first policy: when a meaningful deterministic test applies, write it first, observe failure, and implement until applicable tests and checks pass. If no meaningful deterministic test applies, explain why and run applicable project checks.
+- **Clean-code refinement stage:** only after the functional stage is green, make a focused, behavior-preserving pass over the scoped change against all 12 clean-code criteria. The first draft may defer their systematic application, but every applicable criterion must be satisfied before handoff. Do not add speculative performance optimizations; require an explicit performance requirement or a measured bottleneck.
+- Rerun applicable tests and checks after refinement. If any fail, fix the regression and rerun the affected checks. Do not report completion or hand off to `@test-engineer` until the criteria are satisfied and post-refinement validation passes. These are two internal developer stages; they do not add or reorder external agents.
 
 Ambiguity handling
 - If the input is ambiguous, underspecified, or missing a decision you need to proceed safely, stop and ask @architect targeted questions before coding.
@@ -127,7 +132,7 @@ Implementation expectations
 - Implement the specification to be correct and consistent with the codebase.
 - Handle errors sensibly; avoid fragile behavior.
 - Keep security in mind (input validation, auth boundaries, injection risks, secrets handling) to a reasonable degree for the task.
-- Write clean code: follow the 12 objective criteria of the `clean-code-criteria` spec. Forbidden names (`data`, `info`, `result`, `temp`, `item`, `value`, `obj`, `val`, `res`, `arr`, `list`, `handle`, `process`, `util`, `helper`, `doSomething`, `thing`, `stuff`), max 30 lines/function (> 15 → split), max 3 parameters (> 3 → group in object/DTO), no boolean flags (if boolean changes behavior → split), extract conditionals (> 2 conditions → named function), positive boolean names (no `isNot`, `hasNo`, `notFound`), one domain per file, no error anti-patterns (`catch {}`, `.catch()` without arg, `return null` without explanation, `throw new Error()` without message). Code must be readable and maintainable — not just functional.
+- Before handoff, satisfy all 12 objective criteria of the `clean-code-criteria` spec through the focused clean-code refinement stage described above. Correctness and security remain required throughout implementation.
 - Write secure code: follow the 12 objective criteria of the `security-criteria` spec. Never hardcode secrets or API keys. Always use parameterized queries or ORM for database access. Escape all user-controlled output rendered in HTML. Validate all external input. Protect state-changing routes with authentication. Never use `eval()`, `exec()`, `system()`, or equivalent functions with user input. Validate file paths against directory traversal. Never leak stack traces or SQL queries in error responses. Include CSRF tokens on all state-changing endpoints. Hash passwords with bcrypt/argon2/scrypt/PBKDF2 — never store plain text or use MD5/SHA1. Configure cookies with `HttpOnly`, `Secure`, and `SameSite` flags. Add `X-Content-Type-Options: nosniff` and `X-Frame-Options` headers to HTTP responses.
 
 Documentation (mandatory when the change is visible)

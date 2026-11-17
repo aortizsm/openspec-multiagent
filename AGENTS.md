@@ -175,6 +175,15 @@ Antes de enviar al @code-reviewer, el architect verifica:
 - [ ] Hay un diff concreto para revisar (`git diff`)
 - [ ] El change tiene tasks.md con items completados
 
+## Regla de protección: configuración de OpenCode (`~/.config/opencode/opencode.json`)
+
+El archivo `~/.config/opencode/opencode.json` (configuración principal de OpenCode, fuera del repositorio) **no debe ser modificado por ningún agente** (`@architect`, `@developer`, `@code-reviewer`, `@security-reviewer`, `@verifier`, ni ninguno otro).
+
+- Ningún agente debe escribir, editar, sobrescribir ni fusionar cambios en `~/.config/opencode/opencode.json`.
+- Los cambios de routing de modelos (proveedores, model IDs por agente) solo se documentan como **ejemplo** dentro del repositorio, en `opencode.routing.example.jsonc`.
+- Si se desea activar un routing, el usuario lo hace manualmente copiando `opencode.routing.example.jsonc` a `~/.config/opencode/opencode.json` y reiniciando OpenCode.
+- Esta regla es innegociable: protege la configuración personal del entorno de ejecución de OpenCode contra cambios automáticos no intencionados.
+
 ## OpenSpec tooling — nombres correctos
 
 Los skills de OpenSpec usan el **CLI** (`Bash(openspec:*)`). No inventar tools MCP.

@@ -48,6 +48,171 @@ let passed = 0;
 let failed = 0;
 let skipped = 0;
 
+function assertDeveloperFunctionalStage(developerPrompt, functionalStage, refinementStage) {
+  assert.match(
+    developerPrompt.slice(functionalStage, refinementStage),
+    /(?:tests|checks).{0,120}(?:pass|green)/s
+  );
+  assert.match(
+    developerPrompt.slice(functionalStage, refinementStage),
+    /if no meaningful deterministic test applies, explain why and run applicable project checks/
+  );
+}
+
+function assertPostRefinementValidation(developerPrompt, refinementStage) {
+  assert.match(
+    developerPrompt.slice(refinementStage),
+    /(?:rerun|run again).{0,120}(?:tests|checks)/s
+  );
+  assert.match(
+    developerPrompt.slice(refinementStage),
+    /if any fail, fix the regression and rerun the affected checks/
+  );
+}
+
+function assertDeveloperRefinementStage(developerPrompt, refinementStage) {
+  assertPostRefinementValidation(developerPrompt, refinementStage);
+  assert.match(
+    developerPrompt.slice(refinementStage),
+    /against all 12 clean-code criteria/
+  );
+  assert.match(
+    developerPrompt.slice(refinementStage),
+    /every applicable criterion must be satisfied before handoff/
+  );
+  assert.match(
+    developerPrompt.slice(refinementStage),
+    /do not add speculative performance optimizations; require an explicit performance requirement or a measured bottleneck/
+  );
+}
+
+const REVIEWER_SEVERITIES = Object.freeze({
+  CRITICAL: "CRITICAL",
+  WARNING: "WARNING",
+  SUGGESTION: "SUGGESTION",
+});
+
+const REVIEWER_CLEAN_CODE_CRITERIA = [
+  {
+    name: /Prohibited names/,
+    rules: [/descriptive noun/i, ...["data", "info", "result", "temp", "item", "value", "obj", "val", "res", "arr", "list", "handle", "process", "util", "helper", "doSomething", "thing", "stuff"].map((name) => new RegExp(`\\b${name}\\b`))],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /Function length/,
+    rules: [/max 30 lines/i, /> 15 lines/i, /helper functions of max 15 lines/i],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /SRP/,
+    rules: [/validation \+ transformation \+ persistence/i],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /DRY/,
+    rules: [/> 5 lines/i, /2\+ files/i, /string\/number\/regex/i, /3\+ sites/i, /named constant/i],
+    severities: [REVIEWER_SEVERITIES.WARNING, REVIEWER_SEVERITIES.SUGGESTION],
+  },
+  {
+    name: /Error anti-patterns/,
+    rules: [/catch \{\}/i, /\.catch\(\)/i, /without arg/i, /\.catch\(\(\) => \{\}\)/i, /return null/i, /without explanation/i, /throw new Error\(\)/i, /without message/i, /throw new Exception\("error"\)/i],
+    severities: [REVIEWER_SEVERITIES.CRITICAL, REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /Comments/,
+    rules: [/forbidden redundant patterns/i, /must explain WHY, not WHAT/i, ...["incrementa", "decrementa", "asigna", "devuelve", "verifica", "procesa", "filtra", "mapea", "cuenta", "compara", "guarda", "carga"].map((verb) => new RegExp(`// ${verb}`))],
+    severities: [REVIEWER_SEVERITIES.SUGGESTION],
+  },
+  {
+    name: /One domain per file/,
+    rules: [/2\+ domains/i, /auth, persistence, UI, business logic, formatting utils, config/i],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /One abstraction level/,
+    rules: [/domain operations/i, /low-level calls/i, /json\.parse/i, /JSON\.stringify/i, /fs\.readFileSync/i, /new Date/i, /Math\.floor/i, /Array\.prototype/i, /Object\.\*/i, /String\.prototype/i],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /Max parameters/,
+    rules: [/max 3 parameters/i, /object or DTO/i],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /No boolean flags/,
+    rules: [/boolean parameter/i, /changes its behavior/i, /split into two separate functions/i],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /Extract conditionals/,
+    rules: [/more than 2 conditions/i, /if.{0,4}while/i, /named function/i],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+  {
+    name: /Positive boolean names/,
+    rules: [/forbidden negative prefixes/i, /must use positive prefix/i, ...["not", "no", "un", "in", "isNot", "hasNo", "doNot", "dont", "is", "has", "can", "should", "was"].map((prefix) => new RegExp(`\\b${prefix}\\b`))],
+    severities: [REVIEWER_SEVERITIES.WARNING],
+  },
+];
+
+function reviewerCriterionRows(cleanCodeReview) {
+  return [...cleanCodeReview.matchAll(/^\s*\|\s*(\d+)\s*\|([^\n]+)$/gm)]
+    .map(([line, number]) => {
+      const cells = line.split("|");
+      const [, , name] = cells;
+      const rule = cells.slice(3, -2).join("|");
+      const severity = cells.at(-2);
+      return { number: Number(number), name, rule, severity };
+    });
+}
+
+function assertReviewerCriterion(row, expected, index) {
+  assert.match(row.name, expected.name);
+  for (const rule of expected.rules) assert.match(row.rule, rule);
+  const severities = row.severity.match(/\b(?:CRITICAL|WARNING|SUGGESTION)\b/g) ?? [];
+  assert.deepStrictEqual(severities, expected.severities, `criterion ${index + 1} severity`);
+}
+
+function assertReviewerCleanCodeContract(reviewerPrompt) {
+  const start = reviewerPrompt.indexOf("6) Clean Code");
+  const end = reviewerPrompt.indexOf("7) Tests");
+  const cleanCodeReview = reviewerPrompt.slice(start, end);
+  const reviewerCriteria = reviewerCriterionRows(cleanCodeReview);
+
+  assert.strictEqual(reviewerCriteria.length, REVIEWER_CLEAN_CODE_CRITERIA.length);
+  assert.match(cleanCodeReview, /Evaluation: check each criterion against the objective rule\. Flag violations with the specified severity\./);
+  REVIEWER_CLEAN_CODE_CRITERIA.forEach((expected, index) => {
+    const reviewerCriterion = reviewerCriteria[index];
+    assert.strictEqual(reviewerCriterion.number, index + 1);
+    assertReviewerCriterion(reviewerCriterion, expected, index);
+  });
+}
+
+test("developer prompt: clean-code refinement follows functional validation", () => {
+  const developerPrompt = readFileSync(
+    join(process.cwd(), "opencode/agents/developer.md"),
+    "utf8"
+  ).toLowerCase();
+  const functionalStage = developerPrompt.indexOf("**functional stage:**");
+  const refinementStage = developerPrompt.indexOf("**clean-code refinement stage:**");
+
+  assert.ok(functionalStage >= 0 && refinementStage > functionalStage);
+  assertDeveloperFunctionalStage(developerPrompt, functionalStage, refinementStage);
+  assertDeveloperRefinementStage(developerPrompt, refinementStage);
+  assert.match(
+    developerPrompt,
+    /correctness and security.{0,100}(?:throughout|both stages|remain active)/
+  );
+});
+
+test("code reviewer prompt: evaluates all clean-code criteria with objective severities", () => {
+  const reviewerPrompt = readFileSync(
+    join(process.cwd(), "opencode/agents/code-reviewer.md"),
+    "utf8"
+  );
+  assertReviewerCleanCodeContract(reviewerPrompt);
+});
+
 function test(name, fn) {
   try {
     fn();
@@ -544,9 +709,64 @@ test("reset --confirm removes agent files, MCP entries and local .opencode/agent
 });
 
 // ---------------------------------------------------------------------------
+// Architect prompt contract regression
+// ---------------------------------------------------------------------------
+const architectPrompt = readFileSync(
+  join(process.cwd(), "opencode/agents/architect.md"),
+  "utf8"
+);
+
+function assertDirectDatabaseAuthorization() {
+  assert.match(architectPrompt, /explicitly asks you to review a table/i);
+  assert.match(architectPrompt, /request authorizes this read-only review/i);
+  assert.match(architectPrompt, /routine confirmation/i);
+  assert.match(architectPrompt, /existing query client/i);
+  assert.match(architectPrompt, /ask the user to run the query/i);
+  assert.match(architectPrompt, /do not refuse generically/i);
+  assert.match(architectPrompt, /SQL Server.{0,80}(client|configured)|(?:client|configured).{0,80}SQL Server/i);
+}
+
+function assertExpectedRecordVerification() {
+  assert.match(architectPrompt, /expected behavior includes creating records/i);
+  assert.match(architectPrompt, /relevant logs/i);
+  assert.match(architectPrompt, /affected records/i);
+  assert.match(architectPrompt, /Compare observed records and relationships with the expected outcome/i);
+  assert.match(architectPrompt, /report evidence and discrepancies instead of claiming success/i);
+}
+
+function assertSafeQueryConstruction() {
+  assert.match(architectPrompt, /Execute only read-only `SELECT` statements/i);
+  assert.match(architectPrompt, /\bDML\b|\bDDL\b|stored.procedure/i);
+  assert.match(architectPrompt, /Never issue DML, DDL, stored-procedure execution, or any database-mutating command/i);
+  assert.match(architectPrompt, /Bind every untrusted filter value.{0,100}parameter-binding mechanism/i);
+  assert.match(architectPrompt, /If the client cannot bind.{0,100}pause/i);
+  assert.match(architectPrompt, /never concatenate or interpolate untrusted values into SQL or shell command strings/i);
+  assert.match(architectPrompt, /trusted project schema metadata/i);
+  assert.match(architectPrompt, /quote them using the client's conventions/i);
+  assert.match(architectPrompt, /untrusted.{0,100}shell command strings/i);
+  assert.match(architectPrompt, /pause if a query cannot(?: otherwise)? be constructed safely/i);
+  assert.match(architectPrompt, /Do not install or configure database tooling or change connection settings/i);
+}
+
+function assertSensitiveOutputAndBlockers() {
+  assert.match(architectPrompt, /credentials|secret|\.env/i);
+  assert.match(architectPrompt, /Do not print .*credentials, connection strings, or secret-bearing command output/i);
+  assert.match(architectPrompt, /Select only rows and columns needed for the review/i);
+  assert.match(architectPrompt, /redact secrets and unrelated sensitive values/i);
+  assert.match(architectPrompt, /If configuration, credentials, or a query client are unusable/i);
+  assert.match(architectPrompt, /concrete blocker.{0,80}actionable next step/i);
+  assert.match(architectPrompt, /smallest actionable next step/i);
+  assert.match(architectPrompt, /pause and ask a focused clarification instead of guessing or connecting to an unintended target/i);
+}
+
+test("architect prompt: authorizes explicit read-only table reviews", assertDirectDatabaseAuthorization);
+test("architect prompt: verifies expected database records", assertExpectedRecordVerification);
+test("architect prompt: constructs queries with safe input boundaries", assertSafeQueryConstruction);
+test("architect prompt: protects sensitive output and reports blockers", assertSensitiveOutputAndBlockers);
+
+// ---------------------------------------------------------------------------
 // 9. Zen model selection removal (regression)
 // ---------------------------------------------------------------------------
-
 const ZEN_SYMBOLS = [
   "ZEN_EMBEDDED_PRICING",
   "configureZenProvider",
@@ -812,7 +1032,7 @@ const args = process.argv.slice(2);
 const eventDir = process.env.ORCHESTRATION_EVENTS;
 const record = (event) => appendFileSync(join(eventDir, "events.log"), event + "\\n");
 if (args[0] === "opencode") {
-  const phase = args[args.indexOf("-a") + 1];
+  const phase = args[args.indexOf("--agent") + 1];
   record(phase + ":start");
   if (["code-reviewer", "security-reviewer"].includes(phase)) {
     writeFileSync(join(eventDir, phase + ".started"), "started");
@@ -837,11 +1057,33 @@ function writeFakeNpx(binaryDirectory) {
   const shimPath = join(binaryDirectory, process.platform === "win32" ? "npx.cmd" : "npx");
   writeFileSync(scriptPath, FAKE_NPX_SCRIPT);
   writePlatformNpxShim(shimPath);
+  writeFakeOpencode(binaryDirectory);
+}
+
+function writeFakeOpencode(binaryDirectory) {
+  const scriptPath = join(binaryDirectory, "fake-opencode.cjs");
+  const shimPath = join(binaryDirectory, process.platform === "win32" ? "opencode.cmd" : "opencode");
+  const scriptContent = [
+    `const { join } = require("node:path");`,
+    `process.argv = [process.argv[0], join(__dirname, "fake-npx.cjs"), "opencode", ...process.argv.slice(2)];`,
+    `require("./fake-npx.cjs");`,
+  ].join("\n");
+  writeFileSync(scriptPath, scriptContent);
+  writePlatformOpencodeShim(shimPath);
 }
 
 function writePlatformNpxShim(shimPath) {
   const windowsShim = `@echo off\r\nnode "%~dp0fake-npx.cjs" %*\r\nexit /b %errorlevel%\r\n`;
   const posixShim = `#!/usr/bin/env node\n${FAKE_NPX_SCRIPT}`;
+  writeFileSync(shimPath, process.platform === "win32" ? windowsShim : posixShim);
+  if (process.platform !== "win32") {
+    chmodSync(shimPath, 0o755);
+  }
+}
+
+function writePlatformOpencodeShim(shimPath) {
+  const windowsShim = `@echo off\r\nnode "%~dp0fake-opencode.cjs" %*\r\nexit /b %errorlevel%\r\n`;
+  const posixShim = `#!/usr/bin/env node\n${readFileSync(join(dirname(shimPath), "fake-opencode.cjs"), "utf8")}`;
   writeFileSync(shimPath, process.platform === "win32" ? windowsShim : posixShim);
   if (process.platform !== "win32") {
     chmodSync(shimPath, 0o755);
