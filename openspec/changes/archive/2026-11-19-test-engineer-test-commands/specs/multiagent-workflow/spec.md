@@ -20,7 +20,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Test engineer complements developer-authored tests
-After implementation, `@test-engineer` MUST inspect existing tests against the OpenSpec scenarios and add only missing high-value scenario or edge-case coverage. It MUST NOT duplicate tests that already provide adequate coverage, and MUST remain before the parallel code and security reviews. After adding or changing a test, it MUST run the project's permitted test commands and report the observed result, and it MUST NOT hand a failing test to the parallel reviews. When those commands are unavailable in its environment, it MUST declare the added tests as unexecuted and identify them in its report so the architect or the verifier validates them.
+After implementation, `@test-engineer` MUST inspect existing tests against the OpenSpec scenarios and add only missing high-value scenario or edge-case coverage. It MUST NOT duplicate tests that already provide adequate coverage, and MUST remain before the parallel code and security reviews. It MUST validate the tests it adds by running the project's permitted test commands, or report them as unexecuted when those commands cannot run.
 
 #### Scenario: Developer tests already cover the scenario
 - **WHEN** `@developer` has added a high-value test that adequately covers an OpenSpec scenario
