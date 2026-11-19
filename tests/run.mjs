@@ -899,6 +899,204 @@ test("architect installed copy is byte-identical to source", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Architect prompt contract regression: editing boundary
+// ---------------------------------------------------------------------------
+
+const EDITABLE_RESOURCES = Object.freeze([
+  "openspec/**",
+  "AGENTS.md",
+  "opencode/agents/*",
+  ".opencode/agents/*",
+  "README.md",
+  "docs/**",
+]);
+
+function extractFrontmatter(prompt) {
+  const opening = prompt.indexOf("---\n");
+  const body = prompt.slice(opening + 4);
+  const closing = body.indexOf("\n---");
+  return body.slice(0, closing);
+}
+
+function assertDeclaredWritableResourcesPresent(prompt) {
+  const frontmatter = extractFrontmatter(prompt);
+  for (const resource of EDITABLE_RESOURCES) {
+    const escaped = escapeRegExp(resource);
+    const grant = new RegExp(`action: edit\\s+resource: "${escaped}"\\s+effect: allow`, "g");
+    const occurrences = [...prompt.matchAll(grant)];
+    assert.strictEqual(
+      occurrences.length,
+      2,
+      `edit grant on ${resource} must appear exactly twice (frontmatter + body copy)`,
+    );
+    assert.ok(grant.test(frontmatter), `edit grant on ${resource} missing from frontmatter`);
+  }
+}
+
+function assertDelegationRulePresent(prompt) {
+  assert.match(prompt, /tests, application source and `scripts\/\*\*`/i);
+  assert.match(prompt, /delegated through a `tasks\.md` row/i);
+  assert.match(prompt, /because they change verifiable behaviour/i);
+  assertPhraseAppearsTwice(
+    prompt,
+    "Your writable resources are",
+    "writable-resources phrase must appear exactly twice",
+  );
+  assertPhraseAppearsTwice(
+    prompt,
+    "Never use shell commands to edit files",
+    "no-shell-editing phrase must appear exactly twice",
+  );
+}
+
+function assertPhraseAppearsTwice(prompt, phrase, message) {
+  assert.strictEqual(
+    (prompt.match(new RegExp(escapeRegExp(phrase), "g")) || []).length,
+    2,
+    message,
+  );
+}
+
+function assertShellEditingAbsent(prompt) {
+  // The old note positively instructed shell editing: "use shell commands (sed, echo, redirection)...".
+  assert.ok(
+    !/use shell commands[\s\S]{0,100}?(?:sed|echo|redirection)/i.test(prompt),
+    "no positive instruction to edit via shell commands (sed, echo, redirection)",
+  );
+  assert.ok(
+    !/## File Editing Permissions/i.test(prompt),
+    "## File Editing Permissions section must be absent",
+  );
+  // redirection is anchored to the shell-editing sentence; legitimate standalone uses are allowed.
+  assert.ok(
+    !/(?:sed|echo|shell commands|File Editing Permissions)[\s\S]{0,100}?redirection|redirection[\s\S]{0,100}?(?:sed|echo|shell commands|File Editing Permissions)/i.test(prompt),
+    "redirection must not be presented as a shell editing route",
+  );
+}
+
+function assertEditAllowlistGrantsDeclaredResources(prompt) {
+  const frontmatter = extractFrontmatter(prompt);
+  assert.ok(
+    /action: edit\s+resource: "\*"\s+effect: deny/.test(frontmatter),
+    'frontmatter edit allowlist must deny resource: "*"',
+  );
+  assert.ok(
+    !/action: edit\s+resource: "\*"\s+effect: allow/.test(frontmatter),
+    'frontmatter must not allow resource: "*" under action: edit',
+  );
+  assertAllowedResourcesEqualDeclared(frontmatter);
+}
+
+function assertAllowedResourcesEqualDeclared(frontmatter) {
+  const allowed = editAllowResources(frontmatter);
+  assert.deepStrictEqual(
+    [...allowed].sort(),
+    [...EDITABLE_RESOURCES].sort(),
+    'frontmatter edit allow must grant exactly the declared writable resources',
+  );
+}
+
+// Parse the frontmatter entry by entry instead of with a single ordered
+// regex: OpenCode reads the frontmatter as YAML, where key order inside an
+// entry is not meaningful, so an added entry with `effect:` before
+// `resource:` still grants the permission in practice. Splitting on
+// `- action: ` isolates each block, so `resource` and `effect` are read from
+// the same entry regardless of their relative order, and a later entry cannot
+// bleed into the previous block's captured values.
+function editAllowResources(frontmatter) {
+  const allowed = new Set();
+  const blocks = frontmatter.split(/- action: /);
+  blocks.shift(); // descarta el encabezado anterior a la primera entrada
+  for (const block of blocks) {
+    if (blockAction(block) !== "edit") continue;
+    const resource = blockResource(block);
+    const effect = blockEffect(block);
+    if (resource !== null && effect === "allow") allowed.add(resource);
+  }
+  return allowed;
+}
+
+function blockAction(block) {
+  const action = /^(\w+)/.exec(block);
+  return action === null ? null : action[1];
+}
+
+function blockResource(block) {
+  const match = /resource: "([^"]+)"/.exec(block);
+  return match === null ? null : match[1];
+}
+
+function blockEffect(block) {
+  const match = /effect: (allow|deny)/.exec(block);
+  return match === null ? null : match[1];
+}
+
+function assertEditAllowlistExcludesBehaviourFiles(prompt) {
+  // Tests, application source code and scripts are not writable resources;
+  // they are delegated to @developer through a tasks.md row.
+  // Redundant with the exact-set check above; kept as an explicit,
+  // readable assertion of the behaviour-file exclusion.
+  for (const resource of ["tests/*", "scripts/**"]) {
+    const escaped = escapeRegExp(resource);
+    const pattern = new RegExp(`action: edit\\s+resource: "${escaped}"\\s+effect: allow`);
+    assert.ok(
+      !pattern.test(prompt),
+      `edit allowlist must not grant edit on ${resource}`,
+    );
+  }
+}
+
+test("architect source prompt: declared writable resources present", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertDeclaredWritableResourcesPresent(prompt);
+});
+
+test("architect source prompt: delegation rule for tests source scripts present", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertDelegationRulePresent(prompt);
+});
+
+test("architect source prompt: no shell-editing instruction remains", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertShellEditingAbsent(prompt);
+});
+
+test("architect source prompt: edit allowlist grants declared resources and keeps star deny", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertEditAllowlistGrantsDeclaredResources(prompt);
+});
+
+test("architect installed copy: declared writable resources present", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertDeclaredWritableResourcesPresent(prompt);
+});
+
+test("architect installed copy: delegation rule for tests source scripts present", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertDelegationRulePresent(prompt);
+});
+
+test("architect installed copy: no shell-editing instruction remains", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertShellEditingAbsent(prompt);
+});
+
+test("architect installed copy: edit allowlist grants declared resources and keeps star deny", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertEditAllowlistGrantsDeclaredResources(prompt);
+});
+
+test("architect source prompt: edit allowlist denies tests and scripts", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertEditAllowlistExcludesBehaviourFiles(prompt);
+});
+
+test("architect installed copy: edit allowlist denies tests and scripts", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertEditAllowlistExcludesBehaviourFiles(prompt);
+});
+
+// ---------------------------------------------------------------------------
 // 10. Test-engineer test-command permission regression
 // ---------------------------------------------------------------------------
 
