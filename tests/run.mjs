@@ -923,11 +923,10 @@ function assertDeclaredWritableResourcesPresent(prompt) {
   for (const resource of EDITABLE_RESOURCES) {
     const escaped = escapeRegExp(resource);
     const grant = new RegExp(`action: edit\\s+resource: "${escaped}"\\s+effect: allow`, "g");
-    const occurrences = [...prompt.matchAll(grant)];
     assert.strictEqual(
-      occurrences.length,
-      2,
-      `edit grant on ${resource} must appear exactly twice (frontmatter + body copy)`,
+      countOccurrences(prompt, grant),
+      1,
+      `edit grant on ${resource} must appear exactly once (frontmatter only)`,
     );
     assert.ok(grant.test(frontmatter), `edit grant on ${resource} missing from frontmatter`);
   }
@@ -937,22 +936,22 @@ function assertDelegationRulePresent(prompt) {
   assert.match(prompt, /tests, application source and `scripts\/\*\*`/i);
   assert.match(prompt, /delegated through a `tasks\.md` row/i);
   assert.match(prompt, /because they change verifiable behaviour/i);
-  assertPhraseAppearsTwice(
+  assertPhraseAppearsOnce(
     prompt,
     "Your writable resources are",
-    "writable-resources phrase must appear exactly twice",
+    "writable-resources phrase must appear exactly once",
   );
-  assertPhraseAppearsTwice(
+  assertPhraseAppearsOnce(
     prompt,
     "Never use shell commands to edit files",
-    "no-shell-editing phrase must appear exactly twice",
+    "no-shell-editing phrase must appear exactly once",
   );
 }
 
-function assertPhraseAppearsTwice(prompt, phrase, message) {
+function assertPhraseAppearsOnce(prompt, phrase, message) {
   assert.strictEqual(
-    (prompt.match(new RegExp(escapeRegExp(phrase), "g")) || []).length,
-    2,
+    countOccurrences(prompt, phrase),
+    1,
     message,
   );
 }
@@ -1095,6 +1094,111 @@ test("architect installed copy: edit allowlist denies tests and scripts", () => 
   const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
   assertEditAllowlistExcludesBehaviourFiles(prompt);
 });
+
+// ---------------------------------------------------------------------------
+// 10.5. Architect prompt contract regression: single definition
+//       (capability: agent-definition-integrity)
+// ---------------------------------------------------------------------------
+
+const EXPECTED_HEADINGS = Object.freeze([
+  "## Read-only Database Reviews",
+  "A) Preflight",
+  "B) Project awareness",
+  "## Aprobación del diseño y ejecución del change",
+  "C) Discovery and alignment",
+  "## Memory (Engram)",
+  "## OpenSpec Guidance",
+  "D) Subagent delegation — pass full context",
+  "E) Implementation and review loop",
+  "F) Close the spec (archive)",
+]);
+
+// Secciones que existen en una sola copia y deben sobrevivir byte a byte.
+const UNIQUE_SECTIONS = Object.freeze([
+  "## Read-only Database Reviews",
+  "D) Subagent delegation — pass full context",
+  "E) Implementation and review loop",
+  "F) Close the spec (archive)",
+]);
+
+function countOccurrences(text, pattern) {
+  const regex = pattern instanceof RegExp
+    ? pattern
+    : new RegExp(escapeRegExp(pattern), "g");
+  return (text.match(regex) || []).length;
+}
+
+function assertFrontmatterDelimiters(prompt, where) {
+  const delimiterCount = (prompt.match(/^---$/gm) || []).length;
+  assert.strictEqual(
+    delimiterCount,
+    2,
+    `${where}: exactly two --- delimiters (frontmatter only)`,
+  );
+}
+
+function assertExpectedHeadingsUnique(prompt, where) {
+  for (const heading of EXPECTED_HEADINGS) {
+    assert.strictEqual(
+      countOccurrences(prompt, heading),
+      1,
+      `${where}: heading "${heading}" must appear exactly once`,
+    );
+  }
+}
+
+function assertNoBodyPermissions(prompt, where) {
+  const frontmatterEnd = prompt.indexOf("\n---\n", 4);
+  const body = prompt.slice(frontmatterEnd + 5);
+  assert.ok(
+    !/^permissions:\s*$/m.test(body),
+    `${where}: permissions: must not appear outside the frontmatter`,
+  );
+}
+
+function assertUniqueSectionsPresent(prompt, where) {
+  for (const section of UNIQUE_SECTIONS) {
+    assert.ok(
+      countOccurrences(prompt, section) === 1,
+      `${where}: unique section "${section}" must be present exactly once`,
+    );
+  }
+}
+
+function allHeadings(text) {
+  const marked = (text.match(/^#{1,6} .+$/gm) || []);
+  const lettered = (text.match(/^[A-F]\) .+$/gm) || []);
+  return [...marked, ...lettered];
+}
+
+function assertNoRepeatedHeadings(prompt, where) {
+  for (const heading of allHeadings(prompt)) {
+    assert.strictEqual(
+      countOccurrences(prompt, heading),
+      1,
+      `${where}: heading "${heading}" appears more than once`,
+    );
+  }
+}
+
+function assertSingleDefinition(prompt, where) {
+  assertFrontmatterDelimiters(prompt, where);
+  assertExpectedHeadingsUnique(prompt, where);
+  assertNoBodyPermissions(prompt, where);
+  assertUniqueSectionsPresent(prompt, where);
+  assertNoRepeatedHeadings(prompt, where);
+}
+
+test("architect source prompt: single definition (agent-definition-integrity)", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertSingleDefinition(prompt, "fuente");
+});
+
+test("architect installed copy: single definition (agent-definition-integrity)", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertSingleDefinition(prompt, "instalado");
+});
+
 
 // ---------------------------------------------------------------------------
 // 10. Architect prompt contract regression: question menu rule
