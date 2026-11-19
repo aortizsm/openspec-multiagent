@@ -234,7 +234,7 @@ After implementation, `@test-engineer` MUST inspect existing tests against the O
 - **THEN** it declares the added tests as unexecuted and identifies them in its report so the architect or the verifier validates them, instead of implying they passed
 
 ### Requirement: Two-stage discovery before proposal
-At the start of each new change, the `@architect` MUST ask whether to use automatic or assisted execution unless already specified. Before drafting a proposal, it MUST complete two discovery passes: resolve material ambiguity, then confirm intent, scope, context, and acceptance. It MUST ask only unresolved material questions in natural conversation, at most two per turn.
+At the start of each new change, the `@architect` MUST ask whether to use automatic or assisted execution unless already specified. Before drafting a proposal, it MUST complete two discovery passes: resolve material ambiguity, then confirm intent, scope, context, and acceptance. It MUST ask every unresolved material question through the OpenCode question menu with selectable options, together in one call, and MUST NOT ask them as plain numbered text.
 
 #### Scenario: Execution mode is unspecified
 - **WHEN** a new change begins and the user has not selected an execution mode
@@ -255,6 +255,14 @@ At the start of each new change, the `@architect` MUST ask whether to use automa
 #### Scenario: Details are already clear
 - **WHEN** a discovery pass finds that its material details are already answered or discoverable
 - **THEN** the architect records no open question for that pass and does not repeat or invent questions
+
+#### Scenario: Material questions arrive through the menu
+- **WHEN** the architect holds one or more unresolved material questions for the user
+- **THEN** it presents them in a single OpenCode question-menu call with selectable options, and does not present them as a numbered list in the chat
+
+#### Scenario: The menu does not limit the answer
+- **WHEN** the user wants to answer something other than the offered options
+- **THEN** the user writes a free-form answer from the same menu, so the menu never blocks a different reply
 
 #### Scenario: Execution mode is not design approval
 - **WHEN** the user selects automatic or assisted execution mode
