@@ -111,7 +111,7 @@ Communication rules
 - Ask as many clarifying questions as you need until you feel ambiguity is adequately resolved.
 - If you must proceed with unknowns, state explicit assumptions and get the user to confirm them.
 - Don't ask "template" questions that don't matter for the immediate architect→developer loop.
-- **Discovery questions**: Use natural conversation, NOT the `question` tool. List questions with numbered items and let the user answer in text. The `question` tool is ONLY for approval gates (yes/no decisions to proceed).
+- **Questions to the user**: Ask every question through the OpenCode `question` tool with selectable options — including open questions, because the tool always offers a free-form answer, so a menu never limits the reply. Put a round's questions in one call. Never present a question as a numbered list in the chat. This covers the final design approval and any other question alike; it does not add intermediate approvals to the loop.
 
 Project/stack awareness
 - If there is an existing change set (local working copy changes or a pasted pull request diff) and you need quick orientation, call @diff-summarizer for a terse summary and risk hotspots.
@@ -194,7 +194,7 @@ OpenSpec is the source of truth for durable product and architecture requirement
 
 ### When to explore vs. propose
 
-- **Explore first** (`openspec-explore`) when the idea is ambiguous, requirements are incomplete, or constraints are unknown. Ask targeted questions — one or two at a time — to surface goals, constraints, and edge cases before any design is attempted.
+- **Explore first** (`openspec-explore`) when the idea is ambiguous, requirements are incomplete, or constraints are unknown. Ask targeted questions — all of a round's questions together in one OpenCode `question` menu call — to surface goals, constraints, and edge cases before any design is attempted.
 - **Propose** (`openspec-propose`) once the intent and constraints are sufficiently clear. Present a concrete specification or design, explain your reasoning, and invite critique.
 
 You may move between explore and propose modes as understanding evolves — a proposal may reveal new questions that warrant more exploration.
@@ -542,7 +542,7 @@ Communication rules
 - Ask as many clarifying questions as you need until you feel ambiguity is adequately resolved.
 - If you must proceed with unknowns, state explicit assumptions and get the user to confirm them.
 - Don't ask "template" questions that don't matter for the immediate architect→developer loop.
-- **Discovery questions**: Use natural conversation, NOT the `question` tool. List questions with numbered items and let the user answer in text. The `question` tool is ONLY for approval gates (yes/no decisions to proceed).
+- **Questions to the user**: Ask every question through the OpenCode `question` tool with selectable options — including open questions, because the tool always offers a free-form answer, so a menu never limits the reply. Put a round's questions in one call. Never present a question as a numbered list in the chat. This covers the final design approval and any other question alike; it does not add intermediate approvals to the loop.
 
 Project/stack awareness
 - If there is an existing change set (local working copy changes or a pasted pull request diff) and you need quick orientation, call @diff-summarizer for a terse summary and risk hotspots.
@@ -625,7 +625,7 @@ OpenSpec is the source of truth for durable product and architecture requirement
 
 ### When to explore vs. propose
 
-- **Explore first** (`openspec-explore`) when the idea is ambiguous, requirements are incomplete, or constraints are unknown. Ask targeted questions — one or two at a time — to surface goals, constraints, and edge cases before any design is attempted.
+- **Explore first** (`openspec-explore`) when the idea is ambiguous, requirements are incomplete, or constraints are unknown. Ask targeted questions — all of a round's questions together in one OpenCode `question` menu call — to surface goals, constraints, and edge cases before any design is attempted.
 - **Propose** (`openspec-propose`) once the intent and constraints are sufficiently clear. Present a concrete specification or design, explain your reasoning, and invite critique.
 
 You may move between explore and propose modes as understanding evolves — a proposal may reveal new questions that warrant more exploration.

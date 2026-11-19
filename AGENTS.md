@@ -24,6 +24,14 @@ El architect obtiene una sola aprobación explícita del usuario sobre el diseñ
 - Conversación con el usuario: **español**
 - Specs de OpenSpec: **inglés** (convención existente del proyecto)
 
+## Preguntas al usuario
+
+Toda pregunta al usuario se hace con el menú de selección de OpenCode (`question` tool con opciones), incluidas las preguntas abiertas, porque el menú ofrece siempre una respuesta libre y nunca limita la respuesta. Las preguntas de una ronda se presentan en una sola llamada y nunca como lista numerada en el chat. Esta regla del menú prevalece, en el canal y en la cadencia de las preguntas, sobre cualquier guía de skill o comando acerca de cómo o cuándo preguntar al usuario; no exime de preguntar cuando corresponda ni altera los permisos de acción.
+
+Los subagentes no pueden invocar la herramienta: cuando necesitan una decisión, aclaración o confirmación del usuario, la reportan al `@architect`, quien la presenta en el menú.
+
+Esto no cambia la frecuencia de aprobación: sigue habiendo una sola aprobación del diseño al inicio y no hay aprobaciones intermedias durante el loop.
+
 ## Código limpio
 
 El `@code-reviewer` evalúa 12 criterios objetivos (spec `clean-code-criteria`) en cada revisión. El `@developer` los aplica al implementar. Los criterios son verificables sin interpretar intención.

@@ -1097,6 +1097,72 @@ test("architect installed copy: edit allowlist denies tests and scripts", () => 
 });
 
 // ---------------------------------------------------------------------------
+// 10. Architect prompt contract regression: question menu rule
+// ---------------------------------------------------------------------------
+
+function assertPromptIncludes(prompt, pattern, message) {
+  assert.match(prompt, pattern, message);
+}
+
+function assertMenuRulePresent(prompt, where) {
+  assertPromptIncludes(prompt, /OpenCode `question` tool/, `${where}: las preguntas se hacen con el menú de OpenCode`);
+  assertPromptIncludes(prompt, /every question/i, `${where}: la regla cubre toda pregunta al usuario`);
+  assertPromptIncludes(prompt, /free-form answer/, `${where}: el menú ofrece respuesta libre y no limita la respuesta`);
+  assertPromptIncludes(prompt, /one call/i, `${where}: las preguntas de una ronda se preguntan en una sola llamada`);
+  assertPromptIncludes(prompt, /does not add intermediate approvals to the loop/, `${where}: la regla no añade aprobaciones intermedias`);
+}
+
+function assertOldDiscoveryInstructionAbsent(prompt, where) {
+  assert.ok(!prompt.includes("NOT the `question` tool"), `${where}: la instrucción antigua "NOT the question tool" debe haber desaparecido`);
+  assert.ok(!prompt.includes("List questions with numbered items"), `${where}: "List questions with numbered items" debe haber desaparecido`);
+  assert.match(prompt, /Never present a question as a numbered list/i, `${where}: prohíbe presentar preguntas como lista numerada`);
+  assert.ok(!/natural conversation/i.test(prompt), `${where}: no debe quedar la instrucción antigua de "natural conversation"`);
+}
+
+test("architect source prompt: question menu rule replaces discovery-questions bullet", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertMenuRulePresent(prompt, "fuente");
+  assertOldDiscoveryInstructionAbsent(prompt, "fuente");
+});
+
+test("architect installed copy: question menu rule replaces discovery-questions bullet", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertMenuRulePresent(prompt, "instalado");
+  assertOldDiscoveryInstructionAbsent(prompt, "instalado");
+});
+
+const SUBAGENT_FILES = Object.freeze([
+  "developer.md",
+  "code-reviewer.md",
+  "security-reviewer.md",
+  "verifier.md",
+  "ux-designer.md",
+  "repo-scout.md",
+  "diff-summarizer.md",
+  "test-engineer.md",
+]);
+
+const SUBAGENT_DELEGATION_REGEX =
+  /report.{0,40}@architect.{0,80}OpenCode selection menu.{0,80}question.{0,40}tool.{0,40}selectable options.{0,80}Subagents cannot invoke the question tool directly/is;
+
+function assertSubagentsReportQuestionsToArchitect() {
+  for (const file of SUBAGENT_FILES) {
+    for (const dir of ["opencode/agents", ".opencode/agents"]) {
+      const path = join(process.cwd(), dir, file);
+      const content = readFileSync(path, "utf8");
+      assert.ok(
+        SUBAGENT_DELEGATION_REGEX.test(content),
+        `${dir}/${file} debe delegar preguntas al @architect mediante el menú de selección de OpenCode y declarar que el subagente no invoca la herramienta`,
+      );
+    }
+  }
+}
+
+test("subagent files: all eight report user questions to @architect via menu", () => {
+  assertSubagentsReportQuestionsToArchitect();
+});
+
+// ---------------------------------------------------------------------------
 // 10. Test-engineer test-command permission regression
 // ---------------------------------------------------------------------------
 
