@@ -12,7 +12,7 @@ This guide describes the standard OpenSpec workflow and the boundaries of the ni
 6. **`@verifier` independently checks the change.** Only after the test-engineer and both reviewers succeed, the verifier runs the project's permitted test/build/lint/typecheck commands and reports evidence per scenario.
 7. **`@architect` validates and closes.** It handles findings through the required correction cycle, checks the final gates, and is the only agent that archives the OpenSpec change. A failed gate stops archive.
 
-The standard quality sequence is `@developer → @test-engineer → [@code-reviewer + @security-reviewer] → @verifier`. `@architect` owns the design approval before it and validation/archive after it. A correction restarts the full quality sequence; no gate is skipped. The workflow permits at most three correction rounds.
+The standard quality sequence is `@developer → @test-engineer → [@code-reviewer + @security-reviewer] → @verifier`. `@architect` owns the design approval before it and validation/archive after it. Only acceptance-blocking findings — a `CRITICAL`, or a `WARNING` linked to an acceptance criterion or scenario — consume a round and block archive while open; a `SUGGESTION`, a documentation or ledger bookkeeping correction, or a pre-existing issue outside the change's scope is recorded with its disposition and never consumes a round. The allowance is declared per change in its `.openspec.yaml` (`correction_rounds`, default three) and is a correction allowance, not the orchestrator's agent-retry limit. A declared value that is not a positive integer fails closed before any agent runs.
 
 ## Agent responsibilities and boundaries
 
@@ -44,7 +44,7 @@ These read-only agents can be called when useful. They are not required pipeline
 
 ## Findings and corrections
 
-After a quality phase, `@architect` sends one consolidated, traceable correction bundle to `@developer` and maintains the findings ledger in the change's `tasks.md`. Each correction round repeats `@test-engineer`, then both parallel reviewers; the verifier runs only after all quality agents succeed. A verifier failure is included in a later correction bundle when a round remains. After three rounds, unresolved required findings or a verifier failure stop the workflow; the change is not archived.
+After a quality phase, `@architect` sends one consolidated, traceable correction bundle to `@developer` and maintains the findings ledger in the change's `tasks.md`. Each correction round repeats `@test-engineer`, then both parallel reviewers; the verifier runs only after all quality agents succeed. A verifier failure is included in a later correction bundle when a round remains. When the declared allowance is spent with acceptance-blocking findings still open, stop, show the ledger to the user, and do not archive. Stop the same way, whatever the allowance, when a resolved finding returns without new evidence or when the developer and a reviewer cannot agree on the same finding. After a behaviour-preserving correction (comments, documentation or ledger evidence), have the finding's source agent confirm closure and re-run the affected checks instead of restarting the full sequence; a correction that changes behaviour, tests or specifications restarts the entire sequence.
 
 ## Source of truth
 

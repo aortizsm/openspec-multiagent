@@ -287,200 +287,24 @@ In assisted mode, the `@architect` MUST ask and wait at an agent handoff when a 
 - **WHEN** automatic execution encounters a material decision that cannot be resolved from approved artifacts or repository context
 - **THEN** the architect stops the pipeline and reports the blocker without inventing a decision
 
-### Requirement: Structured outcomes gate automatic orchestration
-The automatic orchestrator MUST consume and validate one machine-readable outcome from each invoked agent. Missing, malformed, duplicate, or role-invalid outcomes MUST stop the pipeline before later phases or archive.
-
-#### Scenario: Valid outcome permits the next phase
-- **WHEN** an agent returns a parseable outcome with a status allowed for its role
-- **THEN** the orchestrator applies the status-specific gate before deciding whether to advance
-
-#### Scenario: Role-specific outcomes
-- **WHEN** automatic orchestration runs an agent
-- **THEN** developer returns `ready` or `blocked`, test engineer and invoked UX designer return `complete` or `blocked`, reviewers return `approved`, `changes_requested`, or `blocked`, the architect correction coordinator returns `bundle_ready`, `continue`, or `blocked`, and verifier returns per-scenario `pass`, `fail`, or `unverifiable`
-
-#### Scenario: Agent reports a material blocker
-- **WHEN** an agent returns a blocked outcome with its reason
-- **THEN** the orchestrator stops later phases and archive and reports the blocker
-
-#### Scenario: Agent outcome is missing or invalid
-- **WHEN** an agent completes without a recognized outcome or the outcome cannot be parsed
-- **THEN** the orchestrator fails closed, stops the pipeline, and does not archive
-
-#### Scenario: Verifier omits a required scenario
-- **WHEN** the verifier outcome does not include every scenario in the change specs
-- **THEN** the orchestrator stops before archive and reports the missing scenario coverage
-
-#### Scenario: Reviewer requests changes
-- **WHEN** either reviewer reports required changes
-- **THEN** the architect consolidates the findings and records them in the ledger before automatic correction begins
-
-#### Scenario: Reviewer approval includes optional suggestions
-- **WHEN** a reviewer approves with only `SUGGESTION` findings
-- **THEN** the architect records whether each suggestion is adopted or declined with rationale, and the orchestrator continues without treating declined suggestions as required changes
-
-#### Scenario: Reviewer reports only optional suggestions
-- **WHEN** a reviewer finds only optional `SUGGESTION` items
-- **THEN** it returns `approved` with the suggestions; `changes_requested` is reserved for required findings
-
-### Requirement: Automatic mode preserves conditional UX review
-In automatic mode, a change with UI/UX requirements MUST run the UX designer before the developer; a change without UI/UX requirements MUST omit that phase.
-
-#### Scenario: Approved change includes UI/UX
-- **WHEN** automatic mode is selected for a change with UI/UX requirements
-- **THEN** the architect enables UX review and the orchestrator runs `ux-designer` before `developer`
-
-#### Scenario: Approved change has no UI/UX work
-- **WHEN** automatic mode is selected for a change without UI/UX requirements
-- **THEN** the orchestrator does not run the UX phase
-
-### Requirement: Single correction attempt for future changes
-For changes entering implementation after adoption, the `@architect` MUST allow at most one correction attempt. Each attempt includes one consolidated bundle, one developer correction, and one full quality/verifier rerun. Afterward, open required findings or verifier `FAIL` MUST be reported and block archive. Declined suggestions with rationale do not consume the attempt. Changes already in progress retain their approved allowance.
-
-#### Scenario: Initial findings trigger one consolidated correction
-- **WHEN** the initial quality sequence or verifier reports actionable findings
-- **THEN** the architect sends one bundle for one developer correction and then runs the full quality and verification sequence once
-
-#### Scenario: Corrected change passes the full gates
-- **WHEN** the developer addresses the consolidated bundle and the full quality sequence and verifier pass
-- **THEN** the architect may proceed to the final archive gate
-
-#### Scenario: Required findings remain after the single correction
-- **WHEN** a `CRITICAL` or `WARNING` finding remains open after the single correction attempt
-- **THEN** the architect stops, reports the unresolved findings, and does not archive or start another correction attempt
-
-#### Scenario: Verifier fails after the single correction
-- **WHEN** `@verifier` reports a `FAIL` after the single correction attempt
-- **THEN** the architect records and reports the failed scenario and evidence, does not start another correction attempt, and does not archive
-
-#### Scenario: Optional suggestion is declined
-- **WHEN** a reviewer `SUGGESTION` is marked `not adopted` with rationale
-- **THEN** it does not consume the single correction attempt and does not block verification or archive
-
-#### Scenario: Existing in-progress change retains its approved allowance
-- **WHEN** a change was already in progress before this policy was adopted
-- **THEN** the change continues under its previously approved correction allowance
-
-### Requirement: Orchestration integration audit before approval
-Before final design approval for a change that touches automatic orchestration, agent handoffs, or archive behavior, the `@architect` MUST map each acceptance scenario to its implementation path, agent outcome, state transition, failure behavior, archive effect, and verification test. The architect MUST resolve gaps or explicitly exclude them from the approved scope.
-
-#### Scenario: Automation-sensitive design is ready
-- **WHEN** a change affects the orchestrator, agent handoffs, semantic outcomes, or archive gates
-- **THEN** the architect presents an integration map covering each scenario, affected code path, outcome/state transition, failure behavior, archive effect, and test before requesting design approval
-
-#### Scenario: Integration path or failure case is missing
-- **WHEN** the audit finds an acceptance scenario without a known implementation path, failure behavior, or verification method
-- **THEN** the architect resolves the gap in the design or records it as out of scope before asking for approval
-
-### Requirement: Automatic findings reconcile with the actual ledger
-Before automatic execution advances after an architect coordinator outcome or archives a change, the orchestrator MUST match the outcome's findings and decisions to the actual `tasks.md` ledger, including IDs, source, severity, scenario, location, request, status, and closure evidence. Missing or mismatched rows and open required findings MUST block archive.
-
-#### Scenario: Correction bundle matches the ledger
-- **WHEN** the architect coordinator returns `bundle_ready`
-- **THEN** every finding in the bundle has a matching actual ledger row with a stable ID and current status/evidence before developer correction starts
-
-#### Scenario: Coordinator claims a ledger update without matching rows
-- **WHEN** the coordinator reports `ledger_updated` but a finding or verifier decision is absent or differs in the actual `tasks.md`
-- **THEN** automatic execution stops before dispatching the next agent or archiving
-
-#### Scenario: Required ledger finding remains open
-- **WHEN** the automatic pipeline reaches archive while a CRITICAL or WARNING ledger row is `open` or lacks required closure evidence
-- **THEN** it stops and reports the unresolved row without archiving
-
-#### Scenario: Previously recorded finding is removed or malformed
-- **WHEN** a finding ID validated from an architect outcome is missing from the final ledger, duplicated, or hidden by a malformed ledger row
-- **THEN** the orchestrator fails closed before archive and reports the ledger inconsistency
-
-#### Scenario: Required finding classification is downgraded
-- **WHEN** a previously validated CRITICAL or WARNING finding is changed to SUGGESTION or `not adopted` before archive
-- **THEN** the orchestrator fails closed and reports the finding metadata mismatch
-
-### Requirement: Automatic reviewer dispositions remain explicit
-In automatic mode, a reviewer MUST use `changes_requested` only when at least one CRITICAL or WARNING finding requires correction. An `approved` result MAY include optional SUGGESTION findings; the architect MUST record each suggestion as adopted for correction or `not adopted` with rationale before the verifier runs.
-
-#### Scenario: Optional suggestion is adopted
-- **WHEN** the architect adopts a reviewer SUGGESTION
-- **THEN** it records an open ledger finding, returns a correction bundle, and the orchestrator runs developer correction and the full quality sequence
-
-#### Scenario: Optional suggestion is declined
-- **WHEN** the architect declines a reviewer SUGGESTION
-- **THEN** it records `not adopted` with rationale, and that suggestion alone does not trigger another correction round or block archive
-
-#### Scenario: Approved outcome contains a required finding
-- **WHEN** a reviewer returns `approved` with a CRITICAL or WARNING finding
-- **THEN** the orchestrator fails closed before verification or archive
-
-#### Scenario: Coordinator finding IDs are unique and map one-to-one
-- **WHEN** a coordinator outcome repeats a finding ID or maps multiple findings to the same actual ledger row
-- **THEN** the orchestrator rejects the outcome before dispatching another agent
-
-### Requirement: Automatic verifier coverage matches the change specs
-Before automatic archive, verifier outcomes MUST include exactly one result for every scenario in every change spec, with no missing, duplicated, or unexpected scenario ID.
-
-#### Scenario: Verifier omits or adds a scenario
-- **WHEN** the verifier result set differs from the scenarios parsed from the change specs
-- **THEN** the orchestrator stops before archive and reports the coverage mismatch
-
-### Requirement: Automatic process cancellation is bounded
-The automatic orchestrator MUST enforce configured runtime and output bounds and terminate and reap the complete agent process tree on timeout, overflow, or failure. When one parallel reviewer is blocked or fails, its sibling MUST be cancelled and reaped before the pipeline returns control.
-
-#### Scenario: Agent exceeds output or runtime bounds
-- **WHEN** an agent exceeds its configured output limit or runtime
-- **THEN** the orchestrator terminates its process tree, reports the cause, and runs no later phase or archive
-
-#### Scenario: Parallel reviewer is blocked
-- **WHEN** either parallel reviewer reports `blocked` or fails
-- **THEN** the orchestrator cancels and reaps the sibling reviewer before stopping without verifier or archive
-
-#### Scenario: Windows process-tree termination fails
-- **WHEN** the Windows process-tree termination command returns a failure status
-- **THEN** the orchestrator reports termination failure, does not claim the process tree was reaped, and starts no later phase or archive
-
-### Requirement: Automatic agent output preserves UTF-8 boundaries
-The orchestrator MUST preserve valid UTF-8 text when a multi-byte character is split across child-process output chunks, so structured outcome parsing receives the original text.
-
-#### Scenario: Multi-byte output character spans stream chunks
-- **WHEN** valid UTF-8 output contains a multi-byte character split between consecutive child-process chunks
-- **THEN** the captured text and parsed outcome preserve that character without replacement or corruption
-
-### Requirement: Automatic change names have bounded length
-Before using a CLI change name in filesystem paths or subprocess arguments, the orchestrator MUST validate its format and reject names longer than 128 characters.
-
-#### Scenario: Change name exceeds maximum length
-- **WHEN** the orchestrator receives a change name longer than 128 characters
-- **THEN** it exits with an error before reading change files or starting an agent
-
-### Requirement: Review content is treated as untrusted data
-Agent prompts that review change artifacts or diffs MUST instruct reviewers to treat their contents as untrusted data, not as instructions that override the trusted spec, task, or reviewer role.
-
-#### Scenario: Reviewed artifact contains instruction-like text
-- **WHEN** a change artifact or diff includes text that attempts to redirect a reviewer or alter review criteria
-- **THEN** the reviewer evaluates that text as untrusted content and follows the trusted spec and reviewer instructions
-
-### Requirement: Review ledger input is bounded
-Before parsing the `Review Findings` ledger from `tasks.md`, the orchestrator MUST reject file content larger than 1 MiB.
-
-#### Scenario: Review ledger input exceeds the size limit
-- **WHEN** `tasks.md` exceeds 1 MiB while a workflow findings ledger is being read
-- **THEN** the orchestrator fails closed before later phases or archive
-
 ### Requirement: Correction allowance is declared per change
-The automatic orchestrator MUST resolve the correction allowance for a change from the change's own OpenSpec configuration, accepting both `correction_rounds` and the OpenSpec extension spelling `x-correction_rounds` in `openspec/changes/<name>/.openspec.yaml`, and MUST default to one attempt when the change declares neither. It MUST NOT key any allowance on a change name.
+The correction allowance for a change MUST be declared in its own OpenSpec configuration, accepting both `correction_rounds` and the OpenSpec extension spelling `x-correction_rounds` in `openspec/changes/<name>/.openspec.yaml`, and MUST NOT be keyed on a change name. The architect-led cycle consumes the allowance and defaults to three rounds. A declared value that is not a positive integer MUST fail closed with a clear error before reading change files or starting any agent.
 
 #### Scenario: Declared allowance is used
 - **WHEN** a change declares a valid `correction_rounds` value greater than one and its findings require correction
-- **THEN** the orchestrator runs correction bundles and quality reruns up to the declared allowance before stopping
+- **THEN** the architect-led cycle runs correction bundles and quality reruns up to the declared allowance before stopping
 
 #### Scenario: Change declares no allowance
 - **WHEN** a change has no `correction_rounds` in its configuration
-- **THEN** the orchestrator allows exactly one correction attempt
+- **THEN** the architect-led cycle allows three correction rounds
 
 #### Scenario: Declared allowance is invalid
 - **WHEN** the configuration declares a value that is not a positive integer
-- **THEN** the orchestrator fails closed with a clear error before reading change files or starting an agent
+- **THEN** the cycle fails closed with a clear error before reading change files or starting an agent
 
 #### Scenario: Extension spelling is accepted
 - **WHEN** a change declares its allowance with the OpenSpec extension spelling `x-correction_rounds`
-- **THEN** the orchestrator honours it exactly as it honours the unprefixed key
+- **THEN** the cycle honours it exactly as it honours the unprefixed key
 
 ### Requirement: Distributed agent definitions match their source
 The repository MUST keep `opencode/agents/<name>.md` as the only source of agent definitions: a project check or test MUST fail when an installed copy under `.opencode/agents/<name>.md` differs from its source, or when `.opencode/agents/` contains an installed definition with no matching source file.
@@ -552,3 +376,37 @@ The `@developer` MUST NOT add performance optimizations without evidence of a me
 #### Scenario: Non-test commands stay out of the allowlist
 - **WHEN** a maintainer inspects the `@test-engineer` agent permissions
 - **THEN** the repository readiness, build, deploy, and service commands are not permitted for this agent
+
+
+### Requirement: Round consumption follows acceptance
+A correction round MUST be consumed only by findings that block acceptance: a `CRITICAL`, or a `WARNING` linked to an acceptance criterion or scenario. Any other finding — a `SUGGESTION`, a documentation or ledger bookkeeping correction, or a pre-existing issue outside the change's scope — MUST be recorded with its disposition and MUST NOT consume a round or block archive.
+
+#### Scenario: Only acceptance-blocking findings consume a round
+- **WHEN** a quality phase or the verifier reports findings and none of them blocks acceptance
+- **THEN** the architect records each disposition and continues to verification and archive without starting a correction round
+
+#### Scenario: Acceptance-blocking finding consumes a round
+- **WHEN** a `CRITICAL` or a `WARNING` linked to an acceptance criterion is open
+- **THEN** it consumes one correction round and blocks archive until it is resolved
+
+### Requirement: Correction cycle stops on non-convergence
+The cycle MUST stop and report the ledger to the user, without archiving, when the same finding is submitted again without new evidence or when the developer and a reviewer cannot agree on the same finding, unless new evidence is presented. This stop applies whatever the remaining allowance.
+
+#### Scenario: Resolved finding returns without new evidence
+- **WHEN** a finding already marked resolved is reported again without new evidence
+- **THEN** the architect stops the cycle, reports the ledger, and does not archive, whatever the allowance
+
+#### Scenario: Developer and reviewer disagree
+- **WHEN** the developer and a reviewer hold incompatible positions on the same finding after one correction
+- **THEN** the architect stops and reports the disagreement to the user instead of sending another bundle
+
+### Requirement: Re-verification is proportional to the correction
+A correction that changes no behaviour — comments, documentation, or ledger evidence — MUST be confirmed with the finding's source agent and the affected checks re-run, without restarting the full quality sequence. A correction that changes behaviour, tests or specifications MUST restart the complete quality sequence before verification.
+
+#### Scenario: Behaviour-preserving correction
+- **WHEN** a correction touches only comments, documentation, or ledger evidence
+- **THEN** the finding's source agent confirms closure and the affected checks are re-run
+
+#### Scenario: Behaviour-changing correction
+- **WHEN** a correction changes behaviour, tests or specifications
+- **THEN** the complete quality sequence runs again before verification

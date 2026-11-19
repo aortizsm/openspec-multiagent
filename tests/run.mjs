@@ -1863,6 +1863,209 @@ test("validateProposalSections: passes when all sections present", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 13. Correction-round governance contract regression
+//       Reads both prompt copies and both guides.
+// ---------------------------------------------------------------------------
+
+const CORRECTION_ROUND_FILES = Object.freeze([
+  join(process.cwd(), "opencode", "agents", "architect.md"),
+  join(process.cwd(), ".opencode", "agents", "architect.md"),
+  join(process.cwd(), "docs", "guides", "agent-workflow.md"),
+  join(process.cwd(), "docs", "guides", "independent-verification.md"),
+]);
+
+// The behaviour-preserving / proportional re-verification clause only appears in
+// the English sources (architect review loop 1.2 and agent-workflow guide); the
+// Spanish approval paragraph (1.1) and Spanish verification guide cover the
+// other four clauses but not this one.
+const ENGLISH_SOURCES = Object.freeze([
+  join(process.cwd(), "opencode", "agents", "architect.md"),
+  join(process.cwd(), "docs", "guides", "agent-workflow.md"),
+]);
+
+// Reviewer classification text (RF-004) only exists in the two architect.md
+// copies (Spanish approval paragraph + English review section), not in the guides.
+const ARCHITECT_PROMPT_FILES = Object.freeze([
+  join(process.cwd(), "opencode", "agents", "architect.md"),
+  join(process.cwd(), ".opencode", "agents", "architect.md"),
+]);
+
+function readCorrectionRoundFile(path) {
+  return readFileSync(path, "utf8");
+}
+
+function assertContains(text, pattern, message) {
+  assert.match(text, pattern, message);
+}
+
+function assertAbsent(text, pattern, message) {
+  assert.ok(!pattern.test(text), message);
+}
+
+function assertAcceptanceBlockingConsumption(text, where) {
+  assertContains(text, /CRITICAL/i, `${where}: CRITICAL findings consume a round`);
+  assertContains(
+    text,
+    /WARNING.{0,80}(acceptance|criterion|scenario|criterio|escenario)|(acceptance|criterion|scenario|criterio|escenario).{0,80}WARNING/i,
+    `${where}: WARNING linked to acceptance criterion or scenario`,
+  );
+  assertContains(text, /consumes a round|consumir ronda|consumen ronda/i, `${where}: blocking findings consume a round`);
+}
+
+function assertDeclaredAllowance(text, where) {
+  assertContains(text, /correction_rounds/i, `${where}: declared allowance key present`);
+  assertContains(text, /default.{0,40}(three|tres)|por defecto.{0,40}(three|tres)/i, `${where}: default of three stated`);
+  assertContains(
+    text,
+    /correction allowance|allowance de correcciones/i,
+    `${where}: described as a correction allowance`,
+  );
+}
+
+function assertNonConvergenceStop(text, where) {
+  assertContains(
+    text,
+    /resolved finding|hallazgo.{0,40}resuelto|reaparece|returns without new evidence|sin evidencia nueva/i,
+    `${where}: non-convergence stop present`,
+  );
+  assertContains(text, /ledger/i, `${where}: ledger reported on stop`);
+}
+
+function assertProportionalSourceAgentAndChecks(text, where) {
+  assertContains(
+    text,
+    /source agent|agente origen|source.{0,40}confirm|origen.{0,40}confirm/i,
+    `${where}: source agent confirms closure`,
+  );
+  assertContains(
+    text,
+    /affected checks|comprobaciones.{0,40}afectadas|re-run|re.ejecut/i,
+    `${where}: affected checks re-run`,
+  );
+}
+
+function assertProportionalCorrectionPathAndRestart(text, where) {
+  assertContains(
+    text,
+    /behaviour-preserving|comportamiento.{0,40}preservad|comentarios|documentation|documentación|ledger evidence|evidencia.{0,30}ledger/i,
+    `${where}: behaviour-preserving correction path`,
+  );
+  assertContains(
+    text,
+    /changes behaviour|changes tests|changes specifications|cambia.{0,40}comportam|pruebas|especificaciones/i,
+    `${where}: behaviour-changing correction restarts full sequence`,
+  );
+}
+
+function assertDeveloperReviewerDisagreement(text, where) {
+  assertContains(
+    text,
+    /cannot agree on the same finding|developer y un revisor no se ponen de acuerdo/i,
+    `${where}: developer-reviewer disagreement stops and reports to user`,
+  );
+}
+
+function assertReviewerClassification(text, where) {
+  assertContains(text, /declares whether it is linked to an acceptance criterion|declara si está ligado a un criterio o escenario/i, `${where}: reviewer declares classification linked to acceptance`);
+  assertContains(text, /MUST NOT change that classification without new evidence|no puede cambiar esa clasificación sin evidencia nueva/i, `${where}: architect cannot change classification without evidence`);
+  assertContains(text, /reviewer that insists without new evidence triggers|revisor que insista sin evidencia nueva dispara/i, `${where}: reviewer insisting triggers non-convergence stop`);
+}
+
+function assertAgentRetryDistinction(text, where) {
+  assertContains(
+    text,
+    /agent-retry limit|límite de reintentos|reintentos del orquestador|MAX_RETRIES|orchestrator/i,
+    `${where}: distinction from agent retry limit stated`,
+  );
+}
+
+function assertNonBlockingFinding(text, where) {
+  assertContains(text, /SUGGESTION/i, `${where}: SUGGESTION findings are non-blocking`);
+  assertContains(text, /never consume|no impide/i, `${where}: non-blocking findings never consume a round`);
+  assertContains(text, /disposición|disposition/i, `${where}: non-blocking findings recorded with disposition`);
+}
+
+function assertRetiredWordingAbsent(text, where) {
+  assertAbsent(text, /maximum of three/i, `${where}: "maximum of three" must be gone`);
+  assertAbsent(text, /after three correction rounds/i, `${where}: "after three correction rounds" must be gone`);
+  assertAbsent(
+    text,
+    /at most one correction attempt/i,
+    `${where}: "at most one correction attempt" must be gone`,
+  );
+  assertAbsent(text, /como máximo tres/i, `${where}: "como máximo tres" must be gone`);
+  assertAbsent(
+    text,
+    /at most three correction rounds/i,
+    `${where}: "at most three correction rounds" must be gone`,
+  );
+}
+
+test("correction-round governance: acceptance-blocking consumption rule present in all four sources", () => {
+  for (const path of CORRECTION_ROUND_FILES) {
+    const text = readCorrectionRoundFile(path);
+    assertAcceptanceBlockingConsumption(text, path);
+  }
+});
+
+test("correction-round governance: declared allowance with default of three present in all four sources", () => {
+  for (const path of CORRECTION_ROUND_FILES) {
+    const text = readCorrectionRoundFile(path);
+    assertDeclaredAllowance(text, path);
+  }
+});
+
+test("correction-round governance: non-convergence stop present in all four sources", () => {
+  for (const path of CORRECTION_ROUND_FILES) {
+    const text = readCorrectionRoundFile(path);
+    assertNonConvergenceStop(text, path);
+  }
+});
+
+test("correction-round governance: proportional re-verification present in the English sources", () => {
+  for (const path of ENGLISH_SOURCES) {
+    const text = readCorrectionRoundFile(path);
+    assertProportionalSourceAgentAndChecks(text, path);
+    assertProportionalCorrectionPathAndRestart(text, path);
+  }
+});
+
+test("correction-round governance: agent-retry distinction stated in all four sources", () => {
+  for (const path of CORRECTION_ROUND_FILES) {
+    const text = readCorrectionRoundFile(path);
+    assertAgentRetryDistinction(text, path);
+  }
+});
+
+test("correction-round governance: retired wording absent from all four sources", () => {
+  for (const path of CORRECTION_ROUND_FILES) {
+    const text = readCorrectionRoundFile(path);
+    assertRetiredWordingAbsent(text, path);
+  }
+});
+
+test("correction-round governance: non-blocking findings do not consume a round in all four sources", () => {
+  for (const path of CORRECTION_ROUND_FILES) {
+    const text = readCorrectionRoundFile(path);
+    assertNonBlockingFinding(text, path);
+  }
+});
+
+test("correction-round governance: developer-reviewer disagreement stops without new bundle in all four sources", () => {
+  for (const path of CORRECTION_ROUND_FILES) {
+    const text = readCorrectionRoundFile(path);
+    assertDeveloperReviewerDisagreement(text, path);
+  }
+});
+
+test("correction-round governance: reviewer classification stands without new evidence in both architect copies", () => {
+  for (const path of ARCHITECT_PROMPT_FILES) {
+    const text = readCorrectionRoundFile(path);
+    assertReviewerClassification(text, path);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 console.log("");
