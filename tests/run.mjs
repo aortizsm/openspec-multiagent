@@ -522,7 +522,7 @@ test("check.mjs --json does not report a git MCP server", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. reinstall.mjs / reset.mjs / install-agents.mjs
+// 9. reinstall.mjs / reset.mjs / install-agents.mjs
 // ---------------------------------------------------------------------------
 
 function withTempConfigHome(fn) {
@@ -767,7 +767,106 @@ test("architect prompt: constructs queries with safe input boundaries", assertSa
 test("architect prompt: protects sensitive output and reports blockers", assertSensitiveOutputAndBlockers);
 
 // ---------------------------------------------------------------------------
-// 9. Zen model selection removal (regression)
+// 10. Test-engineer test-command permission regression
+// ---------------------------------------------------------------------------
+
+const TEST_ENGINEER_AGENT = join(process.cwd(), "opencode/agents/test-engineer.md");
+
+function readTestEngineerPrompt() {
+  return readFileSync(TEST_ENGINEER_AGENT, "utf8");
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertTestCommandAllowed(prompt, commandResource) {
+  const escaped = escapeRegExp(commandResource);
+  const pattern = new RegExp(`action: shell\\s+resource: "${escaped}"\\s+effect: allow`);
+  assert.match(prompt, pattern, `${commandResource} must be permitted`);
+}
+
+function assertShellStarIsDenied(prompt) {
+  assert.match(prompt, /action: shell[\s\S]{0,120}resource: "\*"[\s\S]{0,120}effect: deny/, `shell: "*" must be denied`);
+}
+
+function assertNoShellStarAllowed(prompt) {
+  assert.ok(!/action: shell[\s\S]{0,60}?resource: "\*"[\s\S]{0,40}?effect: allow/.test(prompt), `no shell entry with resource: "*" may be allowed`);
+}
+
+function assertValidationObligationPresent(prompt) {
+  assert.match(prompt, /report the observed result/, `the prompt must require reporting the observed test result`);
+  assert.match(prompt, /declare the added tests as unexecuted/, `the prompt must require declaring unexecuted tests`);
+  assert.match(prompt, /identify them/, `the prompt must require identifying unexecuted tests`);
+  assert.match(prompt, /@architect.{0,12}@verifier/, `the prompt must name the fallback validators`);
+}
+
+function assertOldDoNotExecuteRuleRemoved(prompt) {
+  assert.ok(!prompt.includes("Do not execute tests"), `the old "Do not execute tests" rule must be removed`);
+}
+
+test("test-engineer prompt: test command family is permitted", () => {
+  const prompt = readTestEngineerPrompt();
+  assertTestCommandAllowed(prompt, "npm test*");
+  assertTestCommandAllowed(prompt, "npm run test*");
+  assertTestCommandAllowed(prompt, "pytest*");
+});
+
+test("test-engineer prompt: unrestricted shell stays denied", () => {
+  const prompt = readTestEngineerPrompt();
+  assertShellStarIsDenied(prompt);
+  assertNoShellStarAllowed(prompt);
+});
+
+test("test-engineer prompt: requires reporting observed result and declaring unexecuted tests", () => {
+  const prompt = readTestEngineerPrompt();
+  assertValidationObligationPresent(prompt);
+});
+
+test("test-engineer prompt: old do-not-execute rule removed", () => {
+  const prompt = readTestEngineerPrompt();
+  assertOldDoNotExecuteRuleRemoved(prompt);
+});
+
+function assertCommandNotAllowed(prompt, commandResource) {
+  const escaped = escapeRegExp(commandResource);
+  const pattern = new RegExp(`action: shell\\s+resource: "${escaped}"\\s+effect: allow`);
+  assert.ok(
+    !pattern.test(prompt),
+    `${commandResource} must not be permitted`
+  );
+}
+
+const INSTALLED_TEST_ENGINEER_AGENT = join(
+  process.cwd(),
+  ".opencode",
+  "agents",
+  "test-engineer.md"
+);
+
+function readInstalledTestEngineerPrompt() {
+  return readFileSync(INSTALLED_TEST_ENGINEER_AGENT, "utf8");
+}
+
+test("test-engineer prompt: non-test build/check/deploy commands stay out of the allowlist", () => {
+  const prompt = readTestEngineerPrompt();
+  assertCommandNotAllowed(prompt, "npm run check*");
+  assertCommandNotAllowed(prompt, "npm run build*");
+  assertCommandNotAllowed(prompt, "npm run deploy*");
+  assertCommandNotAllowed(prompt, "npm run lint*");
+});
+
+test("test-engineer prompt: installed local copy also permits the test command family", () => {
+  const prompt = readInstalledTestEngineerPrompt();
+  assertTestCommandAllowed(prompt, "npm test*");
+  assertTestCommandAllowed(prompt, "npm run test*");
+  assertTestCommandAllowed(prompt, "pytest*");
+  assertShellStarIsDenied(prompt);
+  assertNoShellStarAllowed(prompt);
+});
+
+// ---------------------------------------------------------------------------
+// 11. Zen model selection removal (regression)
 // ---------------------------------------------------------------------------
 const ZEN_SYMBOLS = [
   "ZEN_EMBEDDED_PRICING",
@@ -841,7 +940,7 @@ test("CHANGELOG.md: no zen-model-selection entry", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 11. designGate / validateProposalSections (orchestrate.mjs)
+// 12. designGate / validateProposalSections (orchestrate.mjs)
 // ---------------------------------------------------------------------------
 
 const DG_CHANGES_DIR = join(process.cwd(), "openspec", "changes");
