@@ -54,7 +54,7 @@ The installed prompts in `opencode/agents/`, the current OpenSpec change, `AGENT
 
 ### Interactive model selector
 
-`npx openspec-multiagent init` installs the TUI plugin once under the user's global OpenCode plugin directory: `$XDG_CONFIG_HOME/opencode/plugins/agent-models/`, or the default OpenCode config directory (`~/.config/opencode` on macOS/Linux, `%APPDATA%/opencode` on Windows). Re-running initialization skips an existing global copy. OpenCode discovers this plugin across projects, so initialization does not create a project-local `.opencode/plugins/agent-models/` copy.
+`npx openspec-multiagent init` installs the TUI plugin once under the user's global OpenCode plugin directory: `$XDG_CONFIG_HOME/opencode/plugins/agent-models/`, or the default OpenCode config directory (`~/.config/opencode` on macOS/Linux, `%APPDATA%/opencode` on Windows). Re-running initialization skips an existing global copy. OpenCode discovers this plugin across projects, so initialization does not create a project-local `.opencode/plugins/agent-models/` copy. This toolkit checkout also uses the global selector and does not include a project-local copy.
 
 The standalone installer uses the same destination. Run these commands from any project to preview, install, or explicitly refresh the global copy:
 
@@ -64,7 +64,7 @@ npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-inst
 npx --yes --package=github:aortizsm/openspec-multiagent openspec-multiagent-install-agent-models --force
 ```
 
-The installer does not edit the user's global `opencode.json` or `cli.json`. It also does not remove older project-local copies. If `.opencode/plugins/agent-models/` is known to be a toolkit-managed copy, inspect it and remove it manually only after confirming it contains no custom files or edits:
+The installer does not edit the user's global `opencode.json` or `cli.json`, and intentionally leaves older project-local copies untouched. Removing the duplicate from this toolkit checkout does not remove copies in other target projects; those remain user-managed. If `.opencode/plugins/agent-models/` in a target project is known to be a toolkit-managed copy, inspect it and remove it manually only after confirming it contains no custom files or edits:
 
 ```bash
 # From the target project, only after confirming this copy has no custom files or edits:

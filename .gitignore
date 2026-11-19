@@ -12,3 +12,6 @@ Thumbs.db
 
 # CodeGraph indexes (per-project, never committed)
 .codegraph/
+
+# Resolucion local de modelos por agente (config del usuario, no del toolkit)
+.opencode/opencode.jsonc
