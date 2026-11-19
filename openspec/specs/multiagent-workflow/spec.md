@@ -288,10 +288,10 @@ In assisted mode, the `@architect` MUST ask and wait at an agent handoff when a 
 - **THEN** the architect stops the pipeline and reports the blocker without inventing a decision
 
 ### Requirement: Correction allowance is declared per change
-The correction allowance for a change MUST be declared in its own OpenSpec configuration, accepting both `correction_rounds` and the OpenSpec extension spelling `x-correction_rounds` in `openspec/changes/<name>/.openspec.yaml`, and MUST NOT be keyed on a change name. The architect-led cycle consumes the allowance and defaults to three rounds. A declared value that is not a positive integer MUST fail closed with a clear error before reading change files or starting any agent.
+The correction allowance for a change MUST be declared in its own OpenSpec configuration, accepting both `correction_rounds` and the OpenSpec extension spelling `x-correction_rounds` in `openspec/changes/<name>/.openspec.yaml`, and MUST NOT be keyed on a change name. The architect-led cycle consumes the allowance and defaults to three rounds when the change declares none. A declared value that is not a positive integer MUST fail closed with a clear error before reading change files or starting any agent.
 
 #### Scenario: Declared allowance is used
-- **WHEN** a change declares a valid `correction_rounds` value greater than one and its findings require correction
+- **WHEN** a change declares a valid `correction_rounds` value and acceptance-blocking findings require correction
 - **THEN** the architect-led cycle runs correction bundles and quality reruns up to the declared allowance before stopping
 
 #### Scenario: Change declares no allowance
@@ -376,7 +376,6 @@ The `@developer` MUST NOT add performance optimizations without evidence of a me
 #### Scenario: Non-test commands stay out of the allowlist
 - **WHEN** a maintainer inspects the `@test-engineer` agent permissions
 - **THEN** the repository readiness, build, deploy, and service commands are not permitted for this agent
-
 
 ### Requirement: Round consumption follows acceptance
 A correction round MUST be consumed only by findings that block acceptance: a `CRITICAL`, or a `WARNING` linked to an acceptance criterion or scenario. Any other finding — a `SUGGESTION`, a documentation or ledger bookkeeping correction, or a pre-existing issue outside the change's scope — MUST be recorded with its disposition and MUST NOT consume a round or block archive.
