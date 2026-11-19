@@ -22,4 +22,4 @@ El comportamiento depende de la configuración y del cliente SQL que ya tenga el
 
 ## Evidencia
 
-`npm test` pasó: 64 pruebas en `tests/run.mjs` y 39 en `tests/lib.test.mjs`, sin fallos. `npm run check` indicó `READY` con Node 22.23.5 y OpenSpec 1.14.3; `openspec validate architect-sql-database-review --strict` validó el change y `git diff --check` pasó. No se ejecutó una consulta contra una base de datos real: el toolkit no incorpora integración genérica de base de datos, por lo que esa verificación depende de cada proyecto de destino.
+`npm test` pasó: 66 pruebas en `tests/run.mjs` y 39 en `tests/lib.test.mjs`, sin fallos. `npm run check` indicó `READY` con Node 22.23.5 y OpenSpec 1.14.3; `openspec validate architect-sql-database-review --strict` validó el change y `git diff --check` pasó. No se ejecutó una consulta contra una base de datos real: el toolkit no incorpora integración genérica de base de datos, por lo que esa verificación depende de cada proyecto de destino.

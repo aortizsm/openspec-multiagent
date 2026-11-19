@@ -41,7 +41,7 @@ When an executed project process is expected to create database records, `@archi
 
 #### Scenario: Query inputs come from untrusted sources
 - **WHEN** table identifiers, filter values, or command arguments derive from a user request, logs, or other external input
-- **THEN** `@architect` binds all untrusted filter values through the existing client's parameter-binding mechanism, validates identifiers against trusted project schema metadata and quotes them using that client's conventions, and never interpolates untrusted text into SQL or shell command strings; it pauses if the client cannot bind the values or the query cannot otherwise be constructed safely
+- **THEN** `@architect` binds all untrusted filter values through the existing client's parameter-binding mechanism, validates identifiers against trusted project schema metadata and quotes them using that client's conventions, and never interpolates untrusted text into SQL or shell command strings; it pauses and reports a concrete blocker if the client cannot bind the values, and pauses if the query cannot otherwise be constructed safely
 
 #### Scenario: Target connection is ambiguous
 - **WHEN** the target database or environment cannot be identified reliably from the project configuration

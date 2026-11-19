@@ -1299,5 +1299,30 @@ function assertInitInstall(initRun, projectDirectory, globalPath) {
   assert.strictEqual(existsSync(join(globalPath, "..", "cli.json")), false);
   assertUnchangedGlobalConfig(globalPath);
 }
+
+await test("rejects a configured model reference without a provider/model separator", async () => {
+  await withProject(async (projectDirectory) => {
+    const configText = JSON.stringify({ agents: { developer: { model: "provider-only" } } });
+    writeProjectConfig(projectDirectory, configText);
+    const harness = makeHarness(projectDirectory, []);
+    await harness.run();
+    assert.strictEqual(readProjectConfig(projectDirectory), configText);
+    assert.ok(harness.messages.some(([, message]) => /could not be read safely/i.test(message.message)));
+  });
+});
+
+await test("inserts a new top-level property after a trailing comma without duplicating it", async () => {
+  await withProject(async (projectDirectory) => {
+    const configText = '{"model": "existing/model",}';
+    writeProjectConfig(projectDirectory, configText);
+    await makeHarness(projectDirectory, ["developer", "provider-a/model-a", "deep"]).run();
+    const updatedConfig = readProjectConfig(projectDirectory);
+    const parsedConfig = parseProjectConfig(join(projectDirectory, ".opencode", "opencode.jsonc"));
+    assert.ok(!updatedConfig.includes(",,"), "the pre-existing trailing comma must not be duplicated");
+    assert.strictEqual(parsedConfig.model, "existing/model");
+    assert.strictEqual(parsedConfig.agents.developer.model, "provider-a/model-a#deep");
+  });
+});
+
 console.log(`\nAgent model plugin tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

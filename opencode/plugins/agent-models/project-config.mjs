@@ -356,14 +356,20 @@ function readStringNode(node, source) {
 
 function insertProperty(source, objectNode, key, propertyContent) {
   const insertionPoint = objectNode.end - 1;
-  const multiline = source.slice(objectNode.start, objectNode.end).includes("\n");
-  const prefix = objectNode.properties.length && !objectNode.trailingComma ? "," : "";
   const serializedProperty = JSON.stringify(propertyContent, null, 2);
-  const insertion = propertyInsertion(source, objectNode, key, serializedProperty, multiline, prefix);
+  const insertionOptions = {
+    source,
+    objectNode,
+    key,
+    serializedProperty,
+    multiline: source.slice(objectNode.start, objectNode.end).includes("\n"),
+    prefix: objectNode.properties.length && !objectNode.trailingComma ? "," : "",
+  };
+  const insertion = propertyInsertion(insertionOptions);
   return `${source.slice(0, insertionPoint)}${insertion}${source.slice(insertionPoint)}`;
 }
 
-function propertyInsertion(source, objectNode, key, serializedProperty, multiline, prefix) {
+function propertyInsertion({ source, objectNode, key, serializedProperty, multiline, prefix }) {
   const propertyText = `${JSON.stringify(key)}: ${serializedProperty}`;
   if (!multiline) return `${prefix}${objectNode.properties.length ? " " : ""}${propertyText}`;
   const closingIndent = indentationAt(source, objectNode.end - 1);

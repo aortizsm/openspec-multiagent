@@ -11,12 +11,28 @@ const MAX_DISPLAY_LENGTH = 512;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 
 export function parseModelReference(reference) {
+  validatePlainString(reference);
+  validateReferenceLengthBound(reference);
+  const { providerID, modelID, variant } = splitProviderModelVariant(reference);
+  validateProviderID(providerID);
+  validateModelID(modelID);
+  if (variant !== undefined) validateVariantID(variant);
+  return { providerID, modelID, variant };
+}
+
+function validatePlainString(reference) {
   if (typeof reference !== "string" || CONTROL_CHARACTERS.test(reference)) {
     throw new Error("Model reference must be a plain string without control characters.");
   }
+}
+
+function validateReferenceLengthBound(reference) {
   if (reference.length > MAX_MODEL_REFERENCE_LENGTH) {
     throw modelReferenceLimitError();
   }
+}
+
+function splitProviderModelVariant(reference) {
   const separator = reference.indexOf("/");
   if (separator < 0) throw new Error("Model reference must include provider and model IDs.");
   const providerID = reference.slice(0, separator);
@@ -24,9 +40,6 @@ export function parseModelReference(reference) {
   const variantStart = modelWithVariant.indexOf("#");
   const modelID = variantStart < 0 ? modelWithVariant : modelWithVariant.slice(0, variantStart);
   const variant = variantStart < 0 ? undefined : modelWithVariant.slice(variantStart + 1);
-  validateProviderID(providerID);
-  validateModelID(modelID);
-  if (variant !== undefined) validateVariantID(variant);
   return { providerID, modelID, variant };
 }
 

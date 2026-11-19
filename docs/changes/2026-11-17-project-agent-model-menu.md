@@ -38,6 +38,6 @@ No requiere migración. La plantilla `opencode.models.example.jsonc` mantiene su
 
 ## Evidencia
 
-- `npm test`: 66 pruebas de `tests/run.mjs`, 39 de `tests/lib.test.mjs` y 44 de `tests/agent-model-plugin.test.mjs` pasaron.
+- `npm test`: 66 pruebas de `tests/run.mjs`, 39 de `tests/lib.test.mjs` y 49 de `tests/agent-model-plugin.test.mjs` pasaron.
 - `openspec validate project-agent-model-menu --strict`: válido.
 - La verificación independiente de `@verifier` corresponde a la siguiente fase del flujo.

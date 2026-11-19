@@ -740,8 +740,10 @@ function assertSafeQueryConstruction() {
   assert.match(architectPrompt, /Never issue DML, DDL, stored-procedure execution, or any database-mutating command/i);
   assert.match(architectPrompt, /Bind every untrusted filter value.{0,100}parameter-binding mechanism/i);
   assert.match(architectPrompt, /If the client cannot bind.{0,100}pause/i);
+  assert.match(architectPrompt, /client cannot bind.{0,100}concrete blocker/i);
   assert.match(architectPrompt, /never concatenate or interpolate untrusted values into SQL or shell command strings/i);
   assert.match(architectPrompt, /trusted project schema metadata/i);
+  assert.match(architectPrompt, /validate.{0,60}that metadata/i);
   assert.match(architectPrompt, /quote them using the client's conventions/i);
   assert.match(architectPrompt, /untrusted.{0,100}shell command strings/i);
   assert.match(architectPrompt, /pause if a query cannot(?: otherwise)? be constructed safely/i);
