@@ -767,6 +767,138 @@ test("architect prompt: constructs queries with safe input boundaries", assertSa
 test("architect prompt: protects sensitive output and reports blockers", assertSensitiveOutputAndBlockers);
 
 // ---------------------------------------------------------------------------
+// Architect prompt contract regression: project command execution
+// ---------------------------------------------------------------------------
+
+const ARCHITECT_SOURCE_PROMPT = join(process.cwd(), "opencode", "agents", "architect.md");
+const ARCHITECT_INSTALLED_PROMPT = join(process.cwd(), ".opencode", "agents", "architect.md");
+
+function readArchitectPromptAt(path) {
+  return readFileSync(path, "utf8");
+}
+
+function assertExecutionMandate(prompt) {
+  assert.match(prompt, /can execute shell commands directly/i);
+  assert.match(prompt, /project['`]?s own tooling/i);
+}
+
+function assertAntiDelegationRule(prompt) {
+  assert.match(prompt, /never ask the user to run a command/i);
+  assert.match(prompt, /general inability to execute commands/i);
+}
+
+function assertAllowlistRemoved(prompt) {
+  assert.ok(
+    !prompt.includes("You MAY run read-only verification commands"),
+    "la allowlist cerrada de solo lectura debe haber desaparecido"
+  );
+  assert.ok(
+    !prompt.includes("You NEVER implement anything yourself"),
+    "la prohibición categórica de implementar debe haber desaparecido"
+  );
+}
+
+function assertEditingBoundary(prompt) {
+  assert.match(prompt, /@developer['`]*s work/i);
+  assert.match(prompt, /delegated through a `tasks\.md` row/i);
+  assert.ok(
+    !/may also edit source code/i.test(prompt),
+    "el over-grant 'may also edit source code' no debe reaparecer"
+  );
+}
+
+test("architect source prompt: execution mandate and anti-delegation rule", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertExecutionMandate(prompt);
+  assertAntiDelegationRule(prompt);
+});
+
+test("architect source prompt: closed read-only allowlist removed", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertAllowlistRemoved(prompt);
+});
+
+test("architect source prompt: editing boundary maintained", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertEditingBoundary(prompt);
+});
+
+test("architect installed copy: execution mandate and anti-delegation rule", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertExecutionMandate(prompt);
+  assertAntiDelegationRule(prompt);
+});
+
+test("architect installed copy: closed read-only allowlist removed", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertAllowlistRemoved(prompt);
+});
+
+test("architect installed copy: editing boundary maintained", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertEditingBoundary(prompt);
+});
+
+function assertConcreteBlockerAndNextStep(prompt) {
+  assert.match(prompt, /if a command fails or a tool is missing/i);
+  assert.match(prompt, /report the concrete blocker.{0,60}smallest next step/i);
+}
+
+function assertNonMutatingInspection(prompt) {
+  assert.match(prompt, /non-mutating/i);
+  assert.match(prompt, /--dry-run/);
+  assert.match(prompt, /report what it would change/);
+  assert.ok(
+    !/prefer non-mutating modes when the tool offers them/i.test(prompt),
+    "la preferencia blanda de no mutar fue reemplazada por la regla vinculante"
+  );
+}
+
+test("architect source prompt: reports concrete blocker and smallest next step", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertConcreteBlockerAndNextStep(prompt);
+});
+
+test("architect source prompt: prefers non-mutating inspection modes", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertNonMutatingInspection(prompt);
+});
+
+function assertMutationNeedsUserRequest(prompt) {
+  assert.match(prompt, /cannot run without mutating the project/i);
+  assert.match(prompt, /user did not ask for it/i);
+  assert.match(
+    prompt,
+    /report what it would change and do not run it unless the user then asks/i,
+    "el architect debe reportar y no ejecutar salvo que el usuario lo pida"
+  );
+  assert.ok(
+    !/report what it would change before running it/i.test(prompt),
+    "la redacción superada 'report what it would change before running it' no debe persistir"
+  );
+}
+
+test("architect source prompt: does not mutate without user request", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  assertMutationNeedsUserRequest(prompt);
+});
+
+test("architect installed copy: does not mutate without user request", () => {
+  const prompt = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assertMutationNeedsUserRequest(prompt);
+});
+
+test("architect installed copy is byte-identical to source", () => {
+  const source = readArchitectPromptAt(ARCHITECT_SOURCE_PROMPT);
+  const installed = readArchitectPromptAt(ARCHITECT_INSTALLED_PROMPT);
+  assert.strictEqual(
+    installed,
+    source,
+    "installed .opencode/agents/architect.md must be byte-identical to opencode/agents/architect.md"
+  );
+});
+
+// ---------------------------------------------------------------------------
 // 10. Test-engineer test-command permission regression
 // ---------------------------------------------------------------------------
 
