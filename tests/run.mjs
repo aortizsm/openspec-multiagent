@@ -1621,7 +1621,7 @@ test("orchestrate: dry-run shows sequential tests before parallel reviews", () =
 });
 
 function assertPhaseOrder(plan) {
-  const phases = ["1. developer", "2. test-engineer", "3. code-reviewer + security-reviewer", "4. verifier", "5. openspec validate", "6. openspec archive"];
+  const phases = ["1. developer (sequential)", "2. test-engineer (sequential)", "3. code-reviewer ∥ security-reviewer ∥ verifier (parallel)", "4. Ledger gate", "5. Gate validation (fingerprint)", "6. openspec validate", "7. openspec archive"];
   const positions = phases.map((phase) => plan.indexOf(phase));
   assert.ok(positions.every((position) => position >= 0));
   assert.deepStrictEqual(positions, [...positions].sort((left, right) => left - right));
@@ -1713,6 +1713,7 @@ function createIsolatedOrchestrationRepo() {
   mkdirSync(join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "bin"), { recursive: true });
   copyFileSync(join(SCRIPTS, "orchestrate.mjs"), join(root, "scripts", "orchestrate.mjs"));
+  copyFileSync(join(SCRIPTS, "lib.mjs"), join(root, "scripts", "lib.mjs"));
   copyFileSync(join(SCRIPTS, "rollback.mjs"), join(root, "scripts", "rollback.mjs"));
   createIsolatedChange(root);
   writeFakeNpx(join(root, "bin"));
@@ -1752,6 +1753,7 @@ function assertSequentialPhasesComplete(events) {
 }
 
 function assertReviewersOverlap(events) {
+  assert.ok(runtimeEventIndex(events, "test-engineer:end:0") < runtimeEventIndex(events, "verifier:start"));
   assert.ok(runtimeEventIndex(events, "test-engineer:end:0") < runtimeEventIndex(events, "code-reviewer:start"));
   assert.ok(runtimeEventIndex(events, "test-engineer:end:0") < runtimeEventIndex(events, "security-reviewer:start"));
   assert.ok(runtimeEventIndex(events, "code-reviewer:start") < runtimeEventIndex(events, "code-reviewer:end:0"));
@@ -1761,8 +1763,10 @@ function assertReviewersOverlap(events) {
 }
 
 function assertPostReviewGates(events) {
-  assert.ok(runtimeEventIndex(events, "code-reviewer:end:0") < runtimeEventIndex(events, "verifier:start"));
-  assert.ok(runtimeEventIndex(events, "security-reviewer:end:0") < runtimeEventIndex(events, "verifier:start"));
+  assert.ok(runtimeEventIndex(events, "code-reviewer:end:0") < runtimeEventIndex(events, "validate:start"));
+  assert.ok(runtimeEventIndex(events, "security-reviewer:end:0") < runtimeEventIndex(events, "validate:start"));
+  assert.ok(runtimeEventIndex(events, "verifier:end:0") < runtimeEventIndex(events, "validate:start"));
+  // verifier runs in parallel with reviewers now
   assert.ok(runtimeEventIndex(events, "verifier:end:0") < runtimeEventIndex(events, "validate:start"));
   assert.ok(runtimeEventIndex(events, "validate:end:0") < runtimeEventIndex(events, "archive:start"));
   assert.ok(runtimeEventIndex(events, "archive:start") < runtimeEventIndex(events, "archive:end:0"));

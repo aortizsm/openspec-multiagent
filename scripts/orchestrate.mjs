@@ -1,10 +1,99 @@
 #!/usr/bin/env node
 
-import { spawnSync, spawn, execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
-import { saveCheckpoint, rollbackToCheckpoint } from './rollback.mjs';
+import {
+  writeRoleBundle,
+  readRoleBundle,
+  buildDeveloperBundle,
+  buildTestEngineerBundle,
+  buildCodeReviewerBundle,
+  buildSecurityReviewerBundle,
+  buildVerifierBundle,
+  writeVerdict,
+  readVerdict,
+  readScoutCache,
+  writeScoutCache,
+  agentBundlePath, spawnSync, spawn, execFileSync } from 'node:child_process';
+import {
+  writeRoleBundle,
+  readRoleBundle,
+  buildDeveloperBundle,
+  buildTestEngineerBundle,
+  buildCodeReviewerBundle,
+  buildSecurityReviewerBundle,
+  buildVerifierBundle,
+  writeVerdict,
+  readVerdict,
+  readScoutCache,
+  writeScoutCache,
+  agentBundlePath, fileURLToPath } from 'node:url';
+import {
+  writeRoleBundle,
+  readRoleBundle,
+  buildDeveloperBundle,
+  buildTestEngineerBundle,
+  buildCodeReviewerBundle,
+  buildSecurityReviewerBundle,
+  buildVerifierBundle,
+  writeVerdict,
+  readVerdict,
+  readScoutCache,
+  writeScoutCache,
+  agentBundlePath, dirname, join } from 'node:path';
+import {
+  writeRoleBundle,
+  readRoleBundle,
+  buildDeveloperBundle,
+  buildTestEngineerBundle,
+  buildCodeReviewerBundle,
+  buildSecurityReviewerBundle,
+  buildVerifierBundle,
+  writeVerdict,
+  readVerdict,
+  readScoutCache,
+  writeScoutCache,
+  agentBundlePath, existsSync, readFileSync } from 'node:fs';
+import {
+  writeRoleBundle,
+  readRoleBundle,
+  buildDeveloperBundle,
+  buildTestEngineerBundle,
+  buildCodeReviewerBundle,
+  buildSecurityReviewerBundle,
+  buildVerifierBundle,
+  writeVerdict,
+  readVerdict,
+  readScoutCache,
+  writeScoutCache,
+  agentBundlePath, saveCheckpoint, rollbackToCheckpoint, saveImplementationCheckpoint, rollbackImplementation, noopCheckpoint, noopRollback } from './rollback.mjs';
+import {
+  writeRoleBundle,
+  readRoleBundle,
+  buildDeveloperBundle,
+  buildTestEngineerBundle,
+  buildCodeReviewerBundle,
+  buildSecurityReviewerBundle,
+  buildVerifierBundle,
+  writeVerdict,
+  readVerdict,
+  readScoutCache,
+  writeScoutCache,
+  agentBundlePath,
+  appendRunTelemetry,
+  readRunTelemetry,
+  captureTokenStats,
+  getGitHead,
+  getBaseRef,
+  setBaseRef,
+  computeChangeDiff,
+  persistChangeDiff,
+  computeFingerprint,
+  loadGates,
+  saveGate,
+  validateAllGatesPass,
+  
+  agentVerdictPath,
+  agentFindingsPath,
+} from './lib.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,12 +108,11 @@ const AGENTS = [
   'verifier'
 ];
 
-const MAX_RETRIES = 3;
 const REQUIRED_DESIGN_FIELDS = ['status', 'executive_summary', 'artifacts', 'risks', 'next_recommended'];
 const CONTEXT_FILES = ['proposal.md', 'design.md', 'tasks.md'];
 const ORCHESTRATOR_COMMAND = 'node scripts/orchestrate.mjs';
-
-const failureCounts = new Map();
+const BUNDLE_FORMAT_VERSION = '1';
+const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 function printUsage() {
   console.log(`
@@ -34,7 +122,7 @@ Options:
   --dry-run          Show the execution plan without running
   --help             Show this help message
 
-Pipeline: developer → test-engineer → [code-reviewer + security-reviewer] → verifier
+Pipeline: developer → test-engineer → [code-reviewer ∥ security-reviewer ∥ verifier] → join → ledger gate → validate → archive
 After all pass: openspec validate <change> && openspec archive <change> --yes
 `);
 }
@@ -47,7 +135,6 @@ function rejectResumeOptions(args) {
   if (!args.some(isResumeOption)) {
     return;
   }
-
   console.error('Error: --from has been removed.');
   printFullPipelineRestart();
   process.exit(1);
@@ -70,12 +157,10 @@ function parseChangeOptions(args) {
 function parseArgs() {
   const args = process.argv.slice(2);
   rejectResumeOptions(args);
-
   if (hasHelpOption(args)) {
     printUsage();
     process.exit(0);
   }
-
   return parseChangeOptions(args);
 }
 
@@ -85,7 +170,6 @@ function printFullPipelineRestart(changeName = '<change-name>') {
 
 function validateChangeName(changeName) {
   const validNamePattern = /^[a-z0-9_-]+$/;
-
   if (!validNamePattern.test(changeName)) {
     throw new Error(
       `Invalid change name "${changeName}". Only [a-z0-9_-] characters are allowed`
@@ -99,155 +183,13 @@ function runCommand(command, args, options = {}) {
     OPENCODE_NON_INTERACTIVE: '1',
     ...options.env
   };
-
   const spawnResult = spawnSync(command, args, {
     cwd: PROJECT_ROOT,
     env,
     stdio: 'inherit',
     ...options
   });
-
   return spawnResult;
-}
-
-function getFailureCount(changeName, agent) {
-  return failureCounts.get(`${changeName}:${agent}`) || 0;
-}
-
-function incrementFailureCount(changeName, agent) {
-  const key = `${changeName}:${agent}`;
-  const current = failureCounts.get(key) || 0;
-  failureCounts.set(key, current + 1);
-}
-
-function resetFailureCounts(changeName) {
-  for (const key of failureCounts.keys()) {
-    if (key.startsWith(`${changeName}:`)) {
-      failureCounts.delete(key);
-    }
-  }
-}
-
-function hasExceededMaxRetries(changeName, agent) {
-  return getFailureCount(changeName, agent) >= MAX_RETRIES;
-}
-
-function buildAgentEnv(changeName, agent) {
-  const bundle = injectContextBundle(changeName, agent);
-  return {
-    ...process.env,
-    OPENCODE_NON_INTERACTIVE: '1',
-    OPENCODE_CONTEXT_BUNDLE: bundle,
-  };
-}
-
-function runAgent(agent, changeName) {
-  let lastError = null;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`\n=== Running ${agent} for change "${changeName}" (attempt ${attempt}/${MAX_RETRIES}) ===`);
-
-    const agentResult = runCommand('opencode', ['run', '--agent', agent, '--', changeName], {
-      env: buildAgentEnv(changeName, agent),
-    });
-
-    if (agentResult.status === 0) {
-      console.log(`✅ ${agent} completed successfully`);
-      return;
-    }
-
-    incrementFailureCount(changeName, agent);
-    lastError = new Error(`Agent "${agent}" failed with exit code ${agentResult.status}`);
-    console.error(`\n❌ Agent "${agent}" failed with exit code ${agentResult.status} (retry ${getFailureCount(changeName, agent)}/${MAX_RETRIES})`);
-    printFullPipelineRestart(changeName);
-    if (getFailureCount(changeName, agent) >= MAX_RETRIES) {
-      const escalationMsg = `Agent "${agent}" exceeded ${MAX_RETRIES} retries for change "${changeName}". Escalating to architect.`;
-      console.error(`\n❌ ${escalationMsg}`);
-      throw new Error(escalationMsg);
-    }
-  }
-  throw lastError || new Error(`Agent "${agent}" failed after ${MAX_RETRIES} attempts`);
-}
-
-function spawnAgent(agent, changeName) {
-  console.log(`\n=== Running ${agent} for change "${changeName}" ===`);
-  return spawn(
-    'opencode',
-    ['run', '--agent', agent, '--', changeName],
-    {
-      cwd: PROJECT_ROOT,
-      env: buildAgentEnv(changeName, agent),
-      stdio: 'inherit',
-    }
-  );
-}
-
-function waitForAgent(child, agent, changeName) {
-  return new Promise((resolve, reject) => {
-    child.on('close', (code) => {
-      if (code !== 0) {
-        incrementFailureCount(changeName, agent);
-        console.error(`\n❌ Agent "${agent}" failed with exit code ${code}`);
-        printFullPipelineRestart(changeName);
-        reject(new Error(`Agent "${agent}" failed with exit code ${code}`));
-        return;
-      }
-      console.log(`✅ ${agent} completed successfully`);
-      resolve();
-    });
-    child.on('error', (err) => {
-      incrementFailureCount(changeName, agent);
-      reject(err);
-    });
-  });
-}
-
-function runAgentAsync(agent, changeName) {
-  const child = spawnAgent(agent, changeName);
-  return waitForAgent(child, agent, changeName);
-}
-
-async function runAgentAsyncWithRetry(agent, changeName) {
-  let lastError = null;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      await runAgentAsync(agent, changeName);
-      return;
-    } catch (error) {
-      lastError = error;
-      console.error(`\n❌ Agent "${agent}" failed (attempt ${attempt}/${MAX_RETRIES})`);
-      printFullPipelineRestart(changeName);
-      if (attempt >= MAX_RETRIES) {
-        const escalationMsg = `Agent "${agent}" exceeded ${MAX_RETRIES} retries for change "${changeName}". Escalating to architect.`;
-        console.error(`\n❌ ${escalationMsg}`);
-        throw new Error(escalationMsg);
-      }
-    }
-  }
-  throw lastError || new Error(`Agent "${agent}" failed after ${MAX_RETRIES} attempts`);
-}
-
-function runOpenspecValidate(changeName) {
-  console.log(`\n=== Running openspec validate ===`);
-  const validateResult = runCommand('npx', ['openspec', 'validate', changeName, '--strict']);
-  
-  if (validateResult.status !== 0) {
-    console.error(`\n❌ openspec validate failed with exit code ${validateResult.status}`);
-    process.exit(validateResult.status || 1);
-  }
-  
-  console.log(`✅ openspec validate passed`);
-}
-
-function runOpenspecArchive(changeName) {
-  console.log(`\n=== Running openspec archive ===`);
-  const archiveResult = runCommand('npx', ['openspec', 'archive', changeName, '--yes']);
-  
-  if (archiveResult.status !== 0) {
-    console.error(`\n❌ openspec archive failed with exit code ${archiveResult.status}`);
-    process.exit(archiveResult.status || 1);
-  }
-  
-  console.log(`✅ openspec archive completed`);
 }
 
 function loadOpenSpecConfig(changeName) {
@@ -258,7 +200,7 @@ function loadOpenSpecConfig(changeName) {
   const config = {};
   const content = readFileSync(configPath, 'utf8');
   for (const line of content.split('\n')) {
-    const match = line.match(/^([\w]+):\s*(.*)$/);
+    const match = line.match(/^([\w-]+):\s*(.*)$/);
     if (match) {
       config[match[1].trim()] = match[2].trim();
     }
@@ -271,14 +213,12 @@ function designGate(changeName) {
   const openSpecConfig = loadOpenSpecConfig(changeName);
   const skipSpecs = openSpecConfig.skip_specs === 'true';
 
-  // 1. El directorio del change debe existir.
   if (!existsSync(changeDir)) {
     throw new Error(
       `Design gate failed: change directory "${changeDir}" does not exist. Create the change before running the orchestrator.`
     );
   }
 
-  // 2. proposal.md, design.md y tasks.md deben existir.
   for (const fileName of CONTEXT_FILES) {
     const filePath = join(changeDir, fileName);
     if (!existsSync(filePath)) {
@@ -288,7 +228,6 @@ function designGate(changeName) {
     }
   }
 
-  // 3. Al menos un spec en specs/*/spec.md (salvo skip_specs: true).
   if (!skipSpecs) {
     const hasSpec = findSpecMarkdownFiles(join(changeDir, 'specs')).length > 0;
     if (!hasSpec) {
@@ -298,10 +237,7 @@ function designGate(changeName) {
     }
   }
 
-  // 4. design.md debe contener los 5 campos obligatorios.
   validateDesignFields(changeDir);
-
-  // 5. proposal.md debe contener las secciones ## Intent, ## Why, ## What Changes.
   validateProposalSections(changeDir);
 }
 
@@ -309,7 +245,6 @@ function validateProposalSections(changeDir) {
   const proposalPath = join(changeDir, 'proposal.md');
   const proposalContent = readFileSync(proposalPath, 'utf8');
   const requiredSections = ['Intent', 'Why', 'What Changes'];
-
   for (const section of requiredSections) {
     const sectionPattern = new RegExp(`^## ${section}`, 'm');
     if (!sectionPattern.test(proposalContent)) {
@@ -323,7 +258,6 @@ function validateProposalSections(changeDir) {
 function validateDesignFields(changeDir) {
   const designPath = join(changeDir, 'design.md');
   const designContent = readFileSync(designPath, 'utf8');
-
   for (const field of REQUIRED_DESIGN_FIELDS) {
     const fieldPattern = new RegExp(`^## ${field}`, 'm');
     if (!fieldPattern.test(designContent)) {
@@ -333,12 +267,14 @@ function validateDesignFields(changeDir) {
     }
   }
 }
+
 function isLedgerHeader(line) {
   const columns = line.split('|').map(c => c.trim().toLowerCase());
-  return columns.length >= 8
+  return columns.length >= 9
     && columns[0] === 'id'
     && columns[2] === 'severity'
-    && columns.some(c => c.includes('evidence'));
+    && columns.some(c => c.includes('evidence'))
+    && columns.some(c => c === 'status');
 }
 
 function readLedgerSectionWithoutHeader(sectionLines) {
@@ -349,45 +285,6 @@ function readLedgerSectionWithoutHeader(sectionLines) {
     throw new Error('Review Findings section has no valid ledger table in tasks.md.');
   }
   return { exists: true, rows: [] };
-}
-
-function parseReviewLedgerContent(taskContent) {
-  const lines = taskContent.split('\n');
-  let inLedger = false;
-  let headerFound = false;
-  let rows = [];
-
-  for (const line of lines) {
-    if (line.trim() === '## Review Findings') {
-      inLedger = true;
-      continue;
-    }
-    if (inLedger) {
-      if (line.startsWith('## ')) {
-        break;
-      }
-      if (!headerFound) {
-        if (line.startsWith('|') && line.endsWith('|')) {
-          if (isLedgerHeader(line)) {
-            headerFound = true;
-          } else {
-            throw new Error('Review Findings section has no valid ledger table in tasks.md.');
-          }
-        } else if (line.startsWith('|') || line.endsWith('|')) {
-          throw new Error('Review Findings section has no valid ledger table in tasks.md.');
-        }
-        continue;
-      }
-      if (line.startsWith('|') && line.endsWith('|')) {
-        const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-        if (cells.length > 0 && cells[0] !== '---') {
-          rows.push(cells);
-        }
-      }
-    }
-  }
-
-  return { headerFound, rows };
 }
 
 export { designGate, validateProposalSections };
@@ -448,89 +345,429 @@ function readGitDiff() {
   }
 }
 
+/** Read agent definition file for fingerprinting. */
+function readAgentDefinition(agent) {
+  const paths = [
+    join(PROJECT_ROOT, 'opencode', 'agents', `${agent}.md`),
+    join(PROJECT_ROOT, '.opencode', 'agents', `${agent}.md`),
+  ];
+  for (const p of paths) {
+    if (existsSync(p)) return readFileSync(p, 'utf8');
+  }
+  return '';
+}
+
+/** Get resolved model ID for an agent (from OpenCode config or default). */
+function getResolvedModelId(agent) {
+  // Try to read from opencode config
+  try {
+    const configPaths = [
+      join(PROJECT_ROOT, '.opencode', 'opencode.json'),
+      join(PROJECT_ROOT, '.opencode', 'opencode.jsonc'),
+    ];
+    for (const p of configPaths) {
+      if (existsSync(p)) {
+        const content = readFileSync(p, 'utf8');
+        const data = JSON.parse(content.replace(/\/\/.*$/gm, ''));
+        if (data.models?.agents?.[agent]?.model) {
+          return data.models.agents[agent].model;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return `default-${agent}`;
+}
+
+/** Compute fingerprint for a gate. */
+async function computeGateFingerprint(changeName, agent) {
+  const changeDir = join(CHANGES_DIR, changeName);
+  const baseRef = getBaseRef(changeName) || '';
+  const diff = readFileSync(changeDiffPath(changeName), 'utf8');
+  const proposal = readFileSync(join(changeDir, 'proposal.md'), 'utf8');
+  const design = readFileSync(join(changeDir, 'design.md'), 'utf8');
+  const tasks = readFileSync(join(changeDir, 'tasks.md'), 'utf8');
+  const specsDir = join(changeDir, 'specs');
+  let specsContent = '';
+  if (existsSync(specsDir)) {
+    const specFiles = findSpecMarkdownFiles(specsDir);
+    for (const specFile of specFiles) {
+      specsContent += readFileSync(specFile, 'utf8');
+    }
+  }
+  const agentDef = readAgentDefinition(agent);
+  const modelId = getResolvedModelId(agent);
+
+  return computeFingerprint([
+    baseRef,
+    diff,
+    proposal,
+    design,
+    tasks,
+    specsContent,
+    agentDef,
+    modelId,
+    BUNDLE_FORMAT_VERSION,
+  ]);
+}
+
+/** Check if gate should be skipped (has PASS with matching fingerprint). */
+function shouldSkipGate(changeName, agent, currentFingerprint) {
+  const { gates } = loadGates(changeName);
+  const gate = gates[agent];
+  return gate && gate.verdict === 'PASS' && gate.fingerprint === currentFingerprint;
+}
+
+/** Check ledger gate: returns {blocked: boolean, findings: []}. */
+function checkLedgerGate(changeName) {
+  const changeDir = join(CHANGES_DIR, changeName);
+  const tasksPath = join(changeDir, 'tasks.md');
+  if (!existsSync(tasksPath)) return { blocked: false, findings: [] };
+  const tasksContent = readFileSync(tasksPath, 'utf8');
+  const { headerFound, rows } = parseReviewLedgerContent(tasksContent);
+  if (!headerFound) return { blocked: false, findings: [] };
+  const blockedFindings = [];
+  for (const cells of rows) {
+    if (cells.length >= 3) {
+      const severity = cells[2].toUpperCase();
+      const status = cells.length >= 8 ? cells[7].toLowerCase() : 'open';
+      if ((severity === 'CRITICAL' || severity === 'WARNING') && status === 'open') {
+        blockedFindings.push({ severity, cells });
+      }
+    }
+  }
+  return { blocked: blockedFindings.length > 0, findings: blockedFindings };
+}
+
+/** Parse verdict JSON from agent output. */
+async function readAgentVerdict(changeName, agent) {
+  const path = agentVerdictPath(changeName, agent);
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/** Write findings for a failed verdict. */
+function writeAgentFindings(changeName, agent, verdict) {
+  const path = agentFindingsPath(changeName, agent);
+  const findings = verdict.findings || [];
+  const content = JSON.stringify({ agent, findings, timestamp: new Date().toISOString() }, null, 2);
+  const { mkdirSync, writeFileSync } = require('node:fs');
+  const { dirname } = require('node:path');
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+}
+
+/** Run a single agent with timeout and fingerprint check. */
+async function runAgentWithGate(changeName, agent, telemetryInvocation, gateStartTime) {
+  const gateName = agent;
+  const fingerprint = await computeGateFingerprint(changeName, agent);
+
+  // Check if gate can be skipped
+  if (shouldSkipGate(changeName, agent, fingerprint)) {
+    console.log(`⏭️  ${agent}: SKIPPED (fingerprint match)`);
+    const wallMs = Date.now() - gateStartTime;
+    telemetryInvocation.gates.push({
+      gate: gateName,
+      attempts: 0,
+      wall_ms: wallMs,
+      exit_code: 0,
+      verdict: 'PASS',
+      fingerprint,
+      skipped: true,
+      bundle_bytes: 0,
+      tokens: null,
+    });
+    return { skipped: true, verdict: 'PASS' };
+  }
+
+  console.log(`\n=== Running ${agent} for change "${changeName}" ===`);
+  const agentStartTime = Date.now();
+
+  // Spawn agent with timeout
+  const timeoutMs = parseInt(process.env.ORCHESTRATOR_TIMEOUT_MS, 10) || DEFAULT_TIMEOUT_MS;
+  const child = spawn(
+      'opencode',
+      ['run', '--agent', agent, '--', changeName],
+      {
+        cwd: PROJECT_ROOT,
+        env: buildAgentEnv(changeName, agent),
+        stdio: 'inherit',
+      }
+    );
+    'opencode',
+    ['run', '--agent', agent, '--', changeName],
+    {
+      cwd: PROJECT_ROOT,
+      env: buildAgentEnv(changeName, agent),
+      stdio: 'inherit',
+    }
+  );
+
+  let timedOut = false;
+  const timeoutHandle = setTimeout(() => {
+    timedOut = true;
+    child.kill('SIGTERM');
+  }, timeoutMs);
+
+  const exitCode = await new Promise((resolve) => {
+    child.on('close', (code) => {
+      clearTimeout(timeoutHandle);
+      resolve(code);
+    });
+    child.on('error', (err) => {
+      clearTimeout(timeoutHandle);
+      resolve(-1);
+    });
+  });
+
+  const wallMs = Date.now() - agentStartTime;
+  const telemetryTokens = await captureTokenStats();
+
+  // Transport failure: exit code != 0 and no verdict artifact
+  const transportFailure = exitCode !== 0;
+  let verdict = null;
+
+  if (!transportFailure) {
+    verdict = await readAgentVerdict(changeName, agent);
+  }
+
+  const gateResult = {
+    gate: gateName,
+    attempts: 1,
+    wall_ms: wallMs,
+    exit_code: exitCode,
+    verdict: verdict?.verdict || (transportFailure ? 'TRANSPORT_FAILURE' : 'UNKNOWN'),
+    fingerprint,
+    skipped: false,
+    bundle_bytes: 0,
+    tokens: telemetryTokens,
+  };
+
+  if (transportFailure) {
+    console.error(`\n❌ ${agent}: TRANSPORT FAILURE (exit code ${exitCode})`);
+    telemetryInvocation.gates.push(gateResult);
+    return { transportFailure: true, exitCode };
+  }
+
+  if (!verdict) {
+    console.error(`\n❌ ${agent}: NO VERDICT ARTIFACT`);
+    gateResult.verdict = 'NO_VERDICT';
+    telemetryInvocation.gates.push(gateResult);
+    return { transportFailure: true, exitCode: -1 };
+  }
+
+  if (verdict.verdict === 'FAIL') {
+    console.error(`\n❌ ${agent}: VERDICT FAIL`);
+    writeAgentFindings(changeName, agent, verdict);
+    gateResult.findings_count = verdict.findings?.length || 0;
+    telemetryInvocation.gates.push(gateResult);
+    return { verdictFailure: true, verdict };
+  }
+
+  if (verdict.verdict === 'UNVERIFIABLE') {
+    console.error(`\n⚠️  ${agent}: UNVERIFIABLE`);
+    gateResult.verdict = 'UNVERIFIABLE';
+    telemetryInvocation.gates.push(gateResult);
+    return { unverifiable: true, verdict };
+  }
+
+  // PASS
+  console.log(`✅ ${agent}: PASS`);
+  saveGate(changeName, gateName, 'PASS', fingerprint, agentVerdictPath(changeName, agent));
+  telemetryInvocation.gates.push(gateResult);
+  return { verdict: 'PASS' };
+}
+
+/** Run agents in parallel group without killing siblings. */
+async function runParallelGroupNoKill(agents, changeName, telemetryInvocation) {
+  const gateStartTime = Date.now();
+  console.log(`\n=== Parallel group: ${agents.join(', ')} ===`);
+
+  const promises = agents.map(agent => runAgentWithGate(changeName, agent, telemetryInvocation, gateStartTime));
+  const results = await Promise.allSettled(promises);
+
+  const outcomes = results.map((r, i) => ({
+    agent: agents[i],
+    ...(r.status === 'fulfilled' ? r.value : { error: r.reason })
+  }));
+
+  return outcomes;
+}
+
+/** Run sequential agent (developer, test-engineer) with implementation checkpoint. */
+async function runSequentialAgentWithCheckpoint(agent, changeName, telemetryInvocation) {
+  const gateStartTime = Date.now();
+  saveImplementationCheckpoint(agent);
+  const result = await runAgentWithGate(changeName, agent, telemetryInvocation, gateStartTime);
+  if (result.transportFailure || result.verdictFailure || result.unverifiable) {
+    rollbackImplementation(agent);
+  }
+  return result;
+}
+
 async function main() {
   const { changeName, dryRun } = parseArgs();
-
   validateChangeName(changeName);
   designGate(changeName);
-  resetFailureCounts(changeName);
 
   if (dryRun) {
     runDryRun(changeName);
     return;
   }
 
-  console.log(`\n🚀 Starting orchestration for change "${changeName}"`);
-  await runAgents(AGENTS, changeName);
-  runPostSteps(changeName);
-}
+  // Load or create telemetry invocation record
+  const invocationId = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const profile = loadOpenSpecConfig(changeName).pipeline || 'standard';
+  const telemetryInvocation = {
+    invocation_id: invocationId,
+    profile,
+    timestamp: new Date().toISOString(),
+    gates: [],
+  };
 
-function runDryRun(changeName) {
-  console.log(`\n📋 Execution plan for change "${changeName}":`);
-  console.log('  1. developer');
-  console.log('  2. test-engineer (sequential, after developer)');
-  console.log('  3. code-reviewer + security-reviewer (parallel, after test-engineer)');
-  console.log('  4. verifier (after all quality agents)');
-  console.log(`  5. openspec validate ${changeName}`);
-  console.log(`  6. openspec archive ${changeName} --yes`);
-  console.log('\nDry run complete. Run without --dry-run to execute.');
-}
+  console.log(`\n🚀 Starting orchestration for change "${changeName}" (profile: ${profile})`);
 
-async function runAgents(agentsToRun, changeName) {
-  let index = 0;
-  while (index < agentsToRun.length) {
-    const agent = agentsToRun[index];
-
-    if (isParallelGroupStart(agentsToRun, index)) {
-      await runParallelGroup(agentsToRun, index, changeName);
-      index += 2;
-      continue;
+  // Capture base_ref on first run
+  let baseRef = getBaseRef(changeName);
+  if (!baseRef) {
+    baseRef = await getGitHead();
+    if (baseRef) {
+      setBaseRef(changeName, baseRef);
+      console.log(`📌 Base ref recorded: ${baseRef.slice(0, 8)}`);
     }
-
-    await runSequentialAgent(agent, changeName);
-    index += 1;
   }
-}
 
-function isParallelGroupStart(agentsToRun, index) {
-  return (
-    agentsToRun[index] === 'code-reviewer' &&
-    agentsToRun[index + 1] === 'security-reviewer'
+  // Compute and persist change diff
+  if (baseRef) {
+    const diff = await computeChangeDiff(baseRef);
+    persistChangeDiff(changeName, diff);
+    console.log(`📝 Change diff persisted (${diff.length} chars)`);
+  }
+
+  // New DAG: developer → test-engineer → [code-reviewer ∥ security-reviewer ∥ verifier] → join → ledger → validate → archive
+  const sequentialAgents = ['developer', 'test-engineer'];
+  const parallelAgents = ['code-reviewer', 'security-reviewer', 'verifier'];
+
+  // Run sequential agents
+  for (const agent of sequentialAgents) {
+    const result = await runSequentialAgentWithCheckpoint(agent, changeName, telemetryInvocation);
+    if (result.transportFailure) {
+      // Transport failure: 1 retry
+      console.log(`🔄 Retrying ${agent} (transport failure)...`);
+      const retryResult = await runSequentialAgentWithCheckpoint(agent, changeName, telemetryInvocation);
+      if (retryResult.transportFailure) {
+        throw new Error(`Agent "${agent}" failed after retry`);
+      }
+    } else if (result.verdictFailure) {
+      // Verdict FAIL: route to developer for fix cycle (max 3)
+      // For now, escalate immediately (fix cycles handled by re-running orchestrator)
+      throw new Error(`Agent "${agent}" verdict FAIL - fix required`);
+    } else if (result.unverifiable) {
+      throw new Error(`Agent "${agent}" UNVERIFIABLE`);
+    }
+  }
+
+  // Run parallel group
+  const parallelOutcomes = await runParallelGroupNoKill(parallelAgents, changeName, telemetryInvocation);
+
+  // Check for any failures in parallel group
+  const parallelFailures = parallelOutcomes.filter(o =>
+    o.transportFailure || o.verdictFailure || o.unverifiable
   );
-}
 
-async function runParallelGroup(agentsToRun, index, changeName) {
-  const agents = [agentsToRun[index], agentsToRun[index + 1]];
-  agents.forEach(agent => saveCheckpoint(agent));
-  const children = agents.map(agent => spawnAgent(agent, changeName));
-  try {
-    await Promise.all(children.map((child, i) => waitForAgent(child, agents[i], changeName)));
-  } catch (error) {
-    for (const child of children) {
-      if (child.exitCode === null && typeof child.kill === 'function') {
-        child.kill();
+  if (parallelFailures.length > 0) {
+    // Consolidate findings from all (including successful ones)
+    console.error('\n❌ Parallel group had failures. Consolidating findings...');
+    for (const outcome of parallelOutcomes) {
+      if (outcome.verdictFailure) {
+        console.error(`  - ${outcome.agent}: ${outcome.verdict.verdict} (${outcome.verdict.findings?.length || 0} findings)`);
       }
     }
-    rollbackToCheckpoint();
-    throw error;
+    throw new Error('Parallel group failed - fix required');
   }
-}
 
-async function runSequentialAgent(agent, changeName) {
-  try {
-    saveCheckpoint(agent);
-    runAgent(agent, changeName);
-  } catch (error) {
-    rollbackToCheckpoint();
-    throw error;
+  // Ledger gate
+  console.log('\n🔍 Checking ledger gate...');
+  const ledgerResult = checkLedgerGate(changeName);
+  if (ledgerResult.blocked) {
+    console.error('❌ Ledger gate BLOCKED: open CRITICAL/WARNING findings');
+    for (const f of ledgerResult.findings) {
+      console.error(`  - ${f.severity}: ${JSON.stringify(f.cells)}`);
+    }
+    throw new Error('Ledger gate blocked - resolve findings before archive');
   }
-}
+  console.log('✅ Ledger gate passed');
 
-function runPostSteps(changeName) {
+  // Validate all gates current PASS
+  const requiredGates = [...sequentialAgents, ...parallelAgents];
+  const currentFingerprints = {};
+  for (const agent of requiredGates) {
+    currentFingerprints[agent] = await computeGateFingerprint(changeName, agent);
+  }
+  const gatesValidation = validateAllGatesPass(changeName, requiredGates, currentFingerprints);
+  if (!gatesValidation.ok) {
+    throw new Error(`Gate validation failed: ${gatesValidation.missing ? `missing ${gatesValidation.missing}` : `stale ${gatesValidation.stale}`}`);
+  }
+
+  // Persist telemetry
+  appendRunTelemetry(changeName, telemetryInvocation);
+
+  // Post steps
   runOpenspecValidate(changeName);
   runOpenspecArchive(changeName);
 
   console.log(`\n🎉 Change "${changeName}" successfully archived!`);
+}
+
+function runDryRun(changeName) {
+  console.log(`\n📋 Execution plan for change "${changeName}":`);
+  console.log('  1. developer (sequential)');
+  console.log('  2. test-engineer (sequential)');
+  console.log('  3. code-reviewer ∥ security-reviewer ∥ verifier (parallel)');
+  console.log('  4. Ledger gate');
+  console.log('  5. Gate validation (fingerprint)');
+  console.log(`  6. openspec validate ${changeName}`);
+  console.log(`  7. openspec archive ${changeName} --yes`);
+  console.log('\nDry run complete. Run without --dry-run to execute.');
+}
+
+function runOpenspecValidate(changeName) {
+  console.log(`\n=== Running openspec validate ===`);
+  const validateResult = runCommand('npx', ['openspec', 'validate', changeName, '--strict']);
+  if (validateResult.status !== 0) {
+    console.error(`\n❌ openspec validate failed with exit code ${validateResult.status}`);
+    process.exit(validateResult.status || 1);
+  }
+  console.log(`✅ openspec validate passed`);
+}
+
+function runOpenspecArchive(changeName) {
+  console.log(`\n=== Running openspec archive ===`);
+  const archiveResult = runCommand('npx', ['openspec', 'archive', changeName, '--yes']);
+  if (archiveResult.status !== 0) {
+    console.error(`\n❌ openspec archive failed with exit code ${archiveResult.status}`);
+    process.exit(archiveResult.status || 1);
+  }
+  console.log(`✅ openspec archive completed`);
+}
+
+function buildAgentEnv(changeName, agent) {
+  const bundle = injectContextBundle(changeName, agent);
+  return {
+    ...process.env,
+    OPENCODE_NON_INTERACTIVE: '1',
+    OPENCODE_CONTEXT_BUNDLE: bundle,
+  };
+}
+
+function changeDiffPath(changeName) {
+  const runDir = join(PROJECT_ROOT, '.opencode', 'run', changeName);
+  return join(runDir, 'change.diff');
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

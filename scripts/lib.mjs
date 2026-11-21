@@ -840,3 +840,568 @@ export async function downloadEngram(version, destDir) {
     rmSync(tmpDir, { recursive: true, force: true });
   }
 }
+
+// --- Telemetry & Gates (Change 1: harden-orchestrator-gates) -------------------
+
+import { createHash } from "node:crypto";
+
+/** Path to the change's telemetry file. */
+export function runTelemetryPath(changeName) {
+  const changeDir = join(REPO_DIR, "openspec", "changes", changeName);
+  return join(changeDir, ".run.json");
+}
+
+/** Path to the change's gates file. */
+export function gatesPath(changeName) {
+  const changeDir = join(REPO_DIR, "openspec", "changes", changeName);
+  return join(changeDir, ".gates.json");
+}
+
+/** Path to the change's diff artifact. */
+export function changeDiffPath(changeName) {
+  const runDir = join(REPO_DIR, ".opencode", "run", changeName);
+  return join(runDir, "change.diff");
+}
+
+/** Path to the scout cache file. */
+export function scoutCachePath(head) {
+  const cacheDir = join(REPO_DIR, ".opencode", "cache");
+  return join(cacheDir, `scout-${head}.md`);
+}
+
+/** Path to an agent's bundle file. */
+export function agentBundlePath(changeName, agent) {
+  const runDir = join(REPO_DIR, ".opencode", "run", changeName);
+  return join(runDir, `${agent}-bundle.md`);
+}
+
+/** Path to an agent's verdict file. */
+export function agentVerdictPath(changeName, agent) {
+  const runDir = join(REPO_DIR, ".opencode", "run", changeName);
+  return join(runDir, `${agent}-verdict.json`);
+}
+
+/** Path to an agent's findings file. */
+export function agentFindingsPath(changeName, agent) {
+  const runDir = join(REPO_DIR, ".opencode", "run", changeName);
+  return join(runDir, `${agent}-findings.json`);
+}
+
+/** Append an invocation record to .run.json (creates if missing). */
+export function appendRunTelemetry(changeName, record) {
+  const path = runTelemetryPath(changeName);
+  mkdirSync(dirname(path), { recursive: true });
+  let data = { invocations: [] };
+  if (existsSync(path)) {
+    try {
+      data = JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      // corrupted file, start fresh
+    }
+  }
+  data.invocations.push(record);
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+/** Read the telemetry file. */
+export function readRunTelemetry(changeName) {
+  const path = runTelemetryPath(changeName);
+  if (!existsSync(path)) return { invocations: [] };
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+/** Capture token stats via `opencode stats`. Returns null on failure. */
+export async function captureTokenStats(projectRoot = REPO_DIR) {
+  try {
+    const { spawnSync } = await import("node:child_process");
+    const result = spawnSync("opencode", ["stats", "--json", "--cost", "--project", ".", "--days", "0"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (result.status !== 0 || !result.stdout) return null;
+    const stats = JSON.parse(result.stdout);
+    const model = stats.models?.[0]?.tokens;
+    if (!model) return null;
+    return {
+      input: model.input ?? 0,
+      output: model.output ?? 0,
+      reasoning: model.reasoning ?? 0,
+      cache_read: model.cache?.read ?? 0,
+      cache_write: model.cache?.write ?? 0,
+      cost: stats.cost ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Get current git HEAD. */
+export async function getGitHead(projectRoot = REPO_DIR) {
+  try {
+    const { spawnSync } = await import("node:child_process");
+    const result = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (result.status !== 0) return null;
+    return result.stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+/** Read base_ref from .gates.json. */
+export function getBaseRef(changeName) {
+  const path = gatesPath(changeName);
+  if (!existsSync(path)) return null;
+  try {
+    const data = JSON.parse(readFileSync(path, "utf8"));
+    return data.base_ref ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Write base_ref to .gates.json. */
+export function setBaseRef(changeName, ref) {
+  const path = gatesPath(changeName);
+  mkdirSync(dirname(path), { recursive: true });
+  let data = {};
+  if (existsSync(path)) {
+    try {
+      data = JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      // ignore
+    }
+  }
+  data.base_ref = ref;
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+/** Compute change diff: git diff <baseRef> + untracked files content. */
+export async function computeChangeDiff(baseRef, projectRoot = REPO_DIR) {
+  const { spawnSync } = await import("node:child_process");
+  let diff = "";
+  try {
+    const result = spawnSync("git", ["diff", baseRef], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (result.status === 0) diff = result.stdout;
+  } catch {
+    // ignore
+  }
+  // Add untracked files
+  try {
+    const result = spawnSync("git", ["ls-files", "--others", "--exclude-standard"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (result.status === 0 && result.stdout.trim()) {
+      const untracked = result.stdout.trim().split("\n");
+      for (const file of untracked) {
+        const filePath = join(projectRoot, file);
+        if (existsSync(filePath)) {
+          const content = readFileSync(filePath, "utf8");
+          diff += `\n\n=== UNTRACKED: ${file} ===\n${content}`;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return diff;
+}
+
+/** Persist change diff to artifact file. */
+export function persistChangeDiff(changeName, diff) {
+  const path = changeDiffPath(changeName);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, diff);
+}
+
+/** Compute SHA-256 fingerprint from concatenated inputs. */
+export function computeFingerprint(inputs) {
+  const hash = createHash("sha256");
+  for (const input of inputs) {
+    if (typeof input === "string") {
+      hash.update(input);
+    } else if (Buffer.isBuffer(input)) {
+      hash.update(input);
+    } else if (input != null) {
+      hash.update(String(input));
+    }
+  }
+  return hash.digest("hex");
+}
+
+/** Load gates from .gates.json. */
+export function loadGates(changeName) {
+  const path = gatesPath(changeName);
+  if (!existsSync(path)) return { gates: {} };
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return { gates: {} };
+  }
+}
+
+/** Save a gate verdict with fingerprint. */
+export function saveGate(changeName, gateName, verdict, fingerprint, evidencePath) {
+  const path = gatesPath(changeName);
+  mkdirSync(dirname(path), { recursive: true });
+  let data = { gates: {} };
+  if (existsSync(path)) {
+    try {
+      data = JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      // ignore
+    }
+  }
+  data.gates[gateName] = {
+    verdict,
+    fingerprint,
+    timestamp: new Date().toISOString(),
+    evidence_path: evidencePath,
+  };
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+/** Validate all required gates have current PASS. */
+export function validateAllGatesPass(changeName, requiredGates, currentFingerprints) {
+  const { gates } = loadGates(changeName);
+  for (const gate of requiredGates) {
+    const g = gates[gate];
+    if (!g || g.verdict !== "PASS") return { ok: false, missing: gate };
+    if (currentFingerprints[gate] && g.fingerprint !== currentFingerprints[gate]) {
+      return { ok: false, stale: gate };
+    }
+  }
+  return { ok: true };
+}
+
+/** Read scout cache. */
+export function readScoutCache(head) {
+  const path = scoutCachePath(head);
+  if (!existsSync(path)) return null;
+  return readFileSync(path, "utf8");
+}
+
+/** Write scout cache. */
+export function writeScoutCache(head, content) {
+  const path = scoutCachePath(head);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+}
+
+/** Summarize diff if it exceeds budget. */
+export function summarizeDiff(diff, maxChars = 60000) {
+  if (diff.length <= maxChars) return { summary: diff, truncated: false };
+  const lines = diff.split("\n");
+  const fileStats = {};
+  let currentFile = null;
+  for (const line of lines) {
+    const match = line.match(/^diff --git a\/(.+) b\/(.+)$/);
+    if (match) {
+      currentFile = match[1];
+      fileStats[currentFile] = (fileStats[currentFile] || 0) + 1;
+    } else if (currentFile) {
+      fileStats[currentFile] = (fileStats[currentFile] || 0) + 1;
+    }
+  }
+  const summary = [
+    `=== DIFF SUMMARY (truncated, ${diff.length} chars) ===`,
+    `Files changed: ${Object.keys(fileStats).length}`,
+    "",
+    ...Object.entries(fileStats).map(([file, lines]) => `  ${file}: ${lines} lines`),
+    "",
+    "=== FIRST 500 LINES ===",
+    lines.slice(0, 500).join("\n"),
+  ].join("\n");
+  return { summary, truncated: true, fileList: Object.keys(fileStats) };
+}
+
+// --- Role-Scoped Context Bundles (Change 2) --------------------------------
+
+/** Write role-specific bundle file. */
+export function writeRoleBundle(changeName, agent, content) {
+  const path = agentBundlePath(changeName, agent);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+}
+
+/** Read role-specific bundle file. */
+export function readRoleBundle(changeName, agent) {
+  const path = agentBundlePath(changeName, agent);
+  if (!existsSync(path)) return null;
+  return readFileSync(path, "utf8");
+}
+
+/** Build developer bundle: tasks + specs + design decisions + scout cache + previous findings. */
+export function buildDeveloperBundle(changeName, scoutCache, previousFindings) {
+  const changeDir = join(REPO_DIR, "openspec", "changes", changeName);
+  const parts = [];
+
+  // Tasks
+  const tasksPath = join(changeDir, "tasks.md");
+  if (existsSync(tasksPath)) {
+    parts.push(`### tasks.md\n${readFileSync(tasksPath, "utf8")}`);
+  }
+
+  // Specs
+  const specsDir = join(changeDir, "specs");
+  if (existsSync(specsDir)) {
+    const specFiles = findSpecMarkdownFiles(specsDir);
+    for (const specFile of specFiles) {
+      parts.push(`### ${specFile}\n${readFileSync(specFile, "utf8")}`);
+    }
+  }
+
+  // Design decisions only (executive_summary, artifacts, risks, next_recommended)
+  const designPath = join(changeDir, "design.md");
+  if (existsSync(designPath)) {
+    const designContent = readFileSync(designPath, "utf8");
+    const decisions = extractDesignDecisions(designContent);
+    if (decisions) parts.push(`### design.md (decisions)\n${decisions}`);
+  }
+
+  // Scout cache
+  if (scoutCache) parts.push(`### repo-scout cache\n${scoutCache}`);
+
+  // Previous findings
+  if (previousFindings && previousFindings.length > 0) {
+    parts.push(`### previous findings\n${JSON.stringify(previousFindings, null, 2)}`);
+  }
+
+  return parts.join("\n\n");
+}
+
+/** Extract design decisions from design.md. */
+function extractDesignDecisions(content) {
+  const sections = ["executive_summary", "artifacts", "risks", "next_recommended"];
+  let result = "";
+  for (const section of sections) {
+    const pattern = new RegExp(`## ${section}[\\s\\S]*?(?=## |$)`, "i");
+    const match = content.match(pattern);
+    if (match) result += match[0] + "\n\n";
+  }
+  return result.trim();
+}
+
+/** Build test-engineer bundle: scenarios + coverage map + test conventions. */
+export function buildTestEngineerBundle(changeName, scoutCache) {
+  const changeDir = join(REPO_DIR, "openspec", "changes", changeName);
+  const parts = [];
+
+  // Spec scenarios (extracted WHEN/THEN)
+  const specsDir = join(changeDir, "specs");
+  if (existsSync(specsDir)) {
+    const specFiles = findSpecMarkdownFiles(specsDir);
+    for (const specFile of specFiles) {
+      const content = readFileSync(specFile, "utf8");
+      const scenarios = extractScenarios(content);
+      if (scenarios) parts.push(`### scenarios from ${specFile}\n${scenarios}`);
+    }
+  }
+
+  // Coverage map from tasks.md
+  const tasksPath = join(changeDir, "tasks.md");
+  if (existsSync(tasksPath)) {
+    const coverageMap = extractCoverageMap(readFileSync(tasksPath, "utf8"));
+    if (coverageMap) parts.push(`### coverage map\n${coverageMap}`);
+  }
+
+  // Test conventions from scout cache
+  if (scoutCache) parts.push(`### test conventions\n${scoutCache}`);
+
+  return parts.join("\n\n");
+}
+
+/** Extract scenarios from spec content. */
+function extractScenarios(content) {
+  const lines = content.split("\n");
+  const scenarios = [];
+  let inScenario = false;
+  let currentScenario = [];
+  for (const line of lines) {
+    if (line.match(/^#### Scenario:/)) {
+      if (inScenario && currentScenario.length > 0) {
+        scenarios.push(currentScenario.join("\n"));
+      }
+      inScenario = true;
+      currentScenario = [line];
+    } else if (inScenario) {
+      if (line.match(/^####/)) {
+        scenarios.push(currentScenario.join("\n"));
+        inScenario = false;
+        currentScenario = [];
+      } else {
+        currentScenario.push(line);
+      }
+    }
+  }
+  if (inScenario && currentScenario.length > 0) {
+    scenarios.push(currentScenario.join("\n"));
+  }
+  return scenarios.length > 0 ? scenarios.join("\n\n") : null;
+}
+
+/** Build code-reviewer bundle: diff + scenarios + clean-code criteria. */
+export function buildCodeReviewerBundle(changeName, diff, scenarios) {
+  const parts = [];
+
+  // Diff (or summary if large)
+  const diffResult = summarizeDiff(diff, 40000);
+  if (diffResult.truncated) {
+    parts.push(`### diff (summary)\n${diffResult.summary}`);
+    parts.push(`### diff full path: ${changeDiffPath(changeName)}`);
+  } else {
+    parts.push(`### diff\n${diff}`);
+  }
+
+  // Scenarios
+  if (scenarios) parts.push(`### scenarios\n${scenarios}`);
+
+  // Clean-code criteria (12 rules)
+  parts.push(`### clean-code criteria (12 rules)\n${getCleanCodeCriteria()}`);
+
+  return parts.join("\n\n");
+}
+
+/** Build security-reviewer bundle: diff + security criteria + relevant scenarios. */
+export function buildSecurityReviewerBundle(changeName, diff, scenarios) {
+  const parts = [];
+
+  // Diff (or summary if large)
+  const diffResult = summarizeDiff(diff, 40000);
+  if (diffResult.truncated) {
+    parts.push(`### diff (summary)\n${diffResult.summary}`);
+    parts.push(`### diff full path: ${changeDiffPath(changeName)}`);
+  } else {
+    parts.push(`### diff\n${diff}`);
+  }
+
+  // Security criteria (12 rules)
+  parts.push(`### security criteria (12 rules)\n${getSecurityCriteria()}`);
+
+  // Relevant scenarios (auth, input handling, file ops, secrets)
+  if (scenarios) {
+    const securityScenarios = filterSecurityScenarios(scenarios);
+    if (securityScenarios) parts.push(`### security-relevant scenarios\n${securityScenarios}`);
+  }
+
+  return parts.join("\n\n");
+}
+
+/** Filter scenarios relevant to security. */
+function filterSecurityScenarios(scenarios) {
+  const keywords = ["auth", "login", "password", "token", "secret", "input", "upload", "file", "path", "sql", "injection", "xss", "csrf", "session", "cookie", "header", "permission", "authorization", "encryption", "hash"];
+  const lines = scenarios.split("\n");
+  const relevant = lines.filter(line =>
+    keywords.some(kw => line.toLowerCase().includes(kw))
+  );
+  return relevant.length > 0 ? relevant.join("\n") : null;
+}
+
+/** Build verifier bundle: scenarios + project commands + diff --stat. */
+export function buildVerifierBundle(changeName, diff, scenarios, scoutCache) {
+  const parts = [];
+
+  // Scenarios
+  if (scenarios) parts.push(`### scenarios\n${scenarios}`);
+
+  // Project commands from scout cache
+  if (scoutCache) {
+    const commands = extractCommands(scoutCache);
+    if (commands) parts.push(`### project commands\n${commands}`);
+  }
+
+  // Diff stat
+  const stat = getDiffStat(diff);
+  if (stat) parts.push(`### diff --stat\n${stat}`);
+
+  return parts.join("\n\n");
+}
+
+/** Extract test commands from scout cache. */
+function extractCommands(content) {
+  const lines = content.split("\n");
+  const commands = lines.filter(line =>
+    line.includes("test") || line.includes("build") || line.includes("lint") || line.includes("typecheck")
+  );
+  return commands.length > 0 ? commands.join("\n") : null;
+}
+
+/** Get diff --stat output. */
+function getDiffStat(diff) {
+  const lines = diff.split("\n");
+  const stats = lines.filter(line => line.match(/^\s+\d+\s+\d+\s+/));
+  return stats.length > 0 ? stats.join("\n") : null;
+}
+
+/** Get clean-code criteria as markdown. */
+function getCleanCodeCriteria() {
+  return `| # | Criterion | Rule | Severity |
+|---|-----------|------|----------|
+| 1 | Prohibited names | Forbidden: data, info, result, temp, item, value, obj, val, res, arr, list, handle, process, util, helper, doSomething, thing, stuff. Valid name must contain a descriptive noun. | WARNING |
+| 2 | Function length | Max 30 lines (excl. comments/blanks). If > 15 lines, must be split into helper functions of max 15 lines each. | WARNING |
+| 3 | SRP | Function must not combine validation + transformation + persistence. | WARNING |
+| 4 | DRY | If > 5 lines of same logic appear in 2+ files, extract to function. If a string/number/regex appears in 3+ sites, define a named constant. | WARNING / SUGGESTION |
+| 5 | Error anti-patterns | Forbidden: catch {}, .catch() without arg, .catch(() => {}), return null without explanation, throw new Error() without message, throw new Exception("error"). | CRITICAL / WARNING |
+| 6 | Comments | Forbidden redundant patterns: // incrementa, // decrementa, // asigna, // devuelve, // verifica, // procesa, // filtra, // mapea, // cuenta, // compara, // guarda, // carga. Comments must explain WHY, not WHAT. | SUGGESTION |
+| 7 | One domain per file | A file must not contain logic from 2+ domains: auth, persistence, UI, business logic, formatting utils, config. | WARNING |
+| 8 | One abstraction level | A function must not mix domain operations (getUser, saveOrder, sendEmail) with low-level calls (json.parse, JSON.stringify, fs.readFileSync, new Date, Math.floor, Array.prototype.*, Object.*, String.prototype.*). | WARNING |
+| 9 | Max parameters | Max 3 parameters per function. If > 3, group into an object or DTO. | WARNING |
+| 10 | No boolean flags | If a function has a boolean parameter that changes its behavior, split into two separate functions. | WARNING |
+| 11 | Extract conditionals | If a boolean expression has more than 2 conditions in if/while/&&/||, extract to a named function. | WARNING |
+| 12 | Positive boolean names | Forbidden negative prefixes: not, no, un, in, isNot, hasNo, doNot, dont. Must use positive prefix: is, has, can, should, was. | WARNING |`;
+}
+
+/** Get security criteria as markdown. */
+function getSecurityCriteria() {
+  return `| # | Criterion | Rule | Severity |
+|---|-----------|------|----------|
+| 1 | No hardcoded secrets | Forbidden: cloud provider key patterns (AKIA..., AIza..., 00...), generic API keys (sk-..., Bearer ...), hardcoded passwords (password = '...', secret = '...'). | CRITICAL |
+| 2 | SQL injection prevention | Forbidden: SQL keywords (SELECT, INSERT, UPDATE, DELETE, DROP) combined with string concatenation (+, ., .) or interpolation (\${, %s, %d). All queries must use parameter binding (?, :name, $1) or ORM methods. | CRITICAL |
+| 3 | XSS prevention | Forbidden: .innerHTML, .outerHTML, .insertAdjacentHTML, document.write with user-controlled data. Template variables in HTML context must pass through an escaping function (esc(), escape(), htmlEncode()). | CRITICAL |
+| 4 | Input validation | Every route/controller/action that accepts user input (HTTP params, file uploads, headers, body) must have explicit validation rules (type, length, format, range). File uploads must validate type, size, and name. | WARNING |
+| 5 | Auth checks on protected routes | Every POST/PUT/DELETE/PATCH route and every route accessing sensitive data must have an authentication guard/filter/middleware. Unauthenticated requests to protected routes must return 401 or 302. | CRITICAL |
+| 6 | No unsafe execution functions | Forbidden: eval(, assert(, Function( (JS), exec(, system(, passthru(, shell_exec(, proc_open(, spawn(, execSync( with user-controlled input. | CRITICAL |
+| 7 | Path traversal prevention | File operations (readFile, include, require, fopen, FileReader) using user-controlled input must validate paths: no .. sequences, or resolved against a base directory (realpath, path.resolve, normalize). Download endpoints must whitelist extensions and reject .. | WARNING |
+| 8 | Secure error handling | Forbidden: var_dump(, print_r(, debug_print_backtrace(, console.log( with variable names containing password, secret, key, token, sql, query outside test files. Error responses must not include stack traces, file paths, or SQL queries. | WARNING |
+| 9 | CSRF protection | Every POST/PUT/DELETE/PATCH route must have CSRF validation (token check, origin/referrer validation, or SameSite cookie attribute). GET routes must not modify server state. | WARNING |
+| 10 | Secure password storage | Passwords must be hashed using a strong algorithm (password_hash, bcrypt.hash, argon2, scrypt, pbkdf2). Forbidden: plain-text storage, MD5/SHA1/SHA256 alone for password hashing. | CRITICAL |
+| 11 | Secure session configuration | Session/cookie configuration must have HttpOnly = true, Secure = true (in production), SameSite = Lax or Strict. | WARNING |
+| 12 | Security headers | HTTP responses must include at minimum X-Content-Type-Options: nosniff and X-Frame-Options: DENY or SAMEORIGIN. | SUGGESTION |`;
+}
+
+/** Verdict interface (JSDoc). */
+/**
+ * @typedef {Object} Verdict
+ * @property {string} agent
+ * @property {"PASS"|"FAIL"|"UNVERIFIABLE"} verdict
+ * @property {Array<{id:string, severity:"CRITICAL"|"WARNING"|"SUGGESTION", status:"open"|"resolved", evidence:string, file?:string, line?:number}>} findings
+ * @property {string} summary
+ */
+
+/** Write verdict JSON file. */
+export function writeVerdict(changeName, agent, verdict) {
+  const path = agentVerdictPath(changeName, agent);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(verdict, null, 2));
+}
+
+/** Read verdict JSON file. */
+export function readVerdict(changeName, agent) {
+  const path = agentVerdictPath(changeName, agent);
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
