@@ -17,9 +17,9 @@ const SCRIPTS = join(PROJECT_ROOT, "scripts");
 let passed = 0;
 let failed = 0;
 
-function test(name, fn) {
+async function test(name, fn) {
   try {
-    fn();
+    await fn();
     passed += 1;
     console.log(`  ✓ ${name}`);
   } catch (err) {
@@ -118,7 +118,7 @@ async function runTests() {
       writeFileSync(join(root, "openspec", "config.yaml"), "schema: spec-driven\nmodified: true\n");
 
       const lib = await import("file://" + libPath);
-      const diff = lib.computeChangeDiff(head, root);
+      const diff = await lib.computeChangeDiff(head, root);
 
       assert.ok(diff.includes("new-file.txt"), "Diff should include untracked file");
       assert.ok(diff.includes("untracked content"), "Diff should include untracked file content");
@@ -148,19 +148,19 @@ async function runTests() {
       writeFileSync(join(changeDir, "tasks.md"), tasksContent);
 
       const { parseReviewLedgerContent } = await import("file://" + join(SCRIPTS, "orchestrate.mjs"));
-      const { headerFound, rows } = parseReviewLedgerContent(tasksContent);
+      const { headerFound, columns, rows } = parseReviewLedgerContent(tasksContent);
 
       assert.strictEqual(headerFound, true);
       assert.strictEqual(rows.length, 2);
 
+      const severityIndex = columns.indexOf("severity");
+      const statusIndex = columns.indexOf("status");
       let blocked = false;
       for (const cells of rows) {
-        if (cells.length >= 3) {
-          const severity = cells[2].toUpperCase();
-          const status = cells.length >= 8 ? cells[7].toLowerCase() : "open";
-          if ((severity === "CRITICAL" || severity === "WARNING") && status === "open") {
-            blocked = true;
-          }
+        const severity = (cells[severityIndex] || "").toUpperCase();
+        const status = (cells[statusIndex] || "open").toLowerCase();
+        if ((severity === "CRITICAL" || severity === "WARNING") && status === "open") {
+          blocked = true;
         }
       }
       assert.strictEqual(blocked, true, "Ledger gate should block on open WARNING");
@@ -189,16 +189,16 @@ async function runTests() {
       writeFileSync(join(changeDir, "tasks.md"), tasksContent);
 
       const { parseReviewLedgerContent } = await import("file://" + join(SCRIPTS, "orchestrate.mjs"));
-      const { headerFound, rows } = parseReviewLedgerContent(tasksContent);
+      const { columns, rows } = parseReviewLedgerContent(tasksContent);
 
+      const severityIndex = columns.indexOf("severity");
+      const statusIndex = columns.indexOf("status");
       let blocked = false;
       for (const cells of rows) {
-        if (cells.length >= 3) {
-          const severity = cells[2].toUpperCase();
-          const status = cells.length >= 8 ? cells[7].toLowerCase() : "open";
-          if ((severity === "CRITICAL" || severity === "WARNING") && status === "open") {
-            blocked = true;
-          }
+        const severity = (cells[severityIndex] || "").toUpperCase();
+        const status = (cells[statusIndex] || "open").toLowerCase();
+        if ((severity === "CRITICAL" || severity === "WARNING") && status === "open") {
+          blocked = true;
         }
       }
       assert.strictEqual(blocked, false, "Ledger gate should not block when all resolved");
@@ -233,7 +233,7 @@ async function runTests() {
     const child = {
       kill: (signal) => { killed = true; },
       on: (event, cb) => {
-        if (event === "close") setTimeout(() => cb(0), 10);
+        if (event === "close") setTimeout(() => cb(0), 150);
       }
     };
 
@@ -334,6 +334,11 @@ async function runTests() {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  // saveGate targets the repository (lib.mjs REPO_DIR is fixed); remove the
+  // fixture change it creates so the test never pollutes the working tree.
+  rmSync(join(PROJECT_ROOT, "openspec", "changes", "test-change"), { recursive: true, force: true });
+  rmSync(join(PROJECT_ROOT, ".opencode", "run", "test-change"), { recursive: true, force: true });
 
   console.log(`\nResults: ${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);

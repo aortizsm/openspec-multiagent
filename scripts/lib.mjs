@@ -4,7 +4,7 @@
 // no shell-specific code, so the scripts behave the same on Windows, macOS and
 // Linux.
 
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -1039,12 +1039,14 @@ export function computeFingerprint(inputs) {
   return hash.digest("hex");
 }
 
-/** Load gates from .gates.json. */
+/*** Load gates from .gates.json. */
 export function loadGates(changeName) {
   const path = gatesPath(changeName);
   if (!existsSync(path)) return { gates: {} };
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
+    const data = JSON.parse(readFileSync(path, "utf8"));
+    // Normalize: ensure gates property exists (handle legacy format with only base_ref)
+    return { gates: data.gates ?? {} };
   } catch {
     return { gates: {} };
   }
@@ -1062,6 +1064,7 @@ export function saveGate(changeName, gateName, verdict, fingerprint, evidencePat
       // ignore
     }
   }
+  data.gates ??= {};
   data.gates[gateName] = {
     verdict,
     fingerprint,
@@ -1211,8 +1214,8 @@ export function buildTestEngineerBundle(changeName, scoutCache) {
   // Coverage map from tasks.md
   const tasksPath = join(changeDir, "tasks.md");
   if (existsSync(tasksPath)) {
-    const coverageMap = extractCoverageMap(readFileSync(tasksPath, "utf8"));
-    if (coverageMap) parts.push(`### coverage map\n${coverageMap}`);
+    const coverageMap = parseCoverageMap(readFileSync(tasksPath, "utf8"));
+    parts.push(`### coverage map\n${JSON.stringify(coverageMap, null, 2)}`);
   }
 
   // Test conventions from scout cache
@@ -1404,4 +1407,206 @@ export function readVerdict(changeName, agent) {
   } catch {
     return null;
   }
+}
+
+/** Dispatch to role-specific bundle builder. */
+export function buildAgentBundle(changeName, agent) {
+  const head = getGitHeadSync();
+  const scoutCache = readScoutCache(head) || '';
+  const diff = readGitDiff();
+  const changeDir = join(REPO_DIR, "openspec", "changes", changeName);
+  let specsContent = '';
+  const specsDir = join(changeDir, "specs");
+  if (existsSync(specsDir)) for (const f of findSpecMarkdownFiles(specsDir)) specsContent += readFileSync(f, "utf8");
+  const scenarios = extractScenarios(specsContent);
+  const prevFindings = readPreviousFindings(changeName);
+
+  switch (agent) {
+    case "developer": return buildDeveloperBundle(changeName, scoutCache, prevFindings);
+    case "test-engineer": return buildTestEngineerBundle(changeName, scoutCache);
+    case "code-reviewer": return buildCodeReviewerBundle(changeName, diff, scenarios);
+    case "security-reviewer": return buildSecurityReviewerBundle(changeName, diff, scenarios);
+    case "verifier": return buildVerifierBundle(changeName, diff, scenarios, scoutCache);
+    default: return injectContextBundle(changeName, agent);
+  }
+}
+
+/** Get current git HEAD synchronously. */
+export function getGitHeadSync() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: REPO_DIR,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).stdout.trim();
+  } catch {
+    return '';
+  }
+}
+
+/** Read previous findings for all agents. */
+export function readPreviousFindings(changeName) {
+  const findings = [];
+  for (const agent of ['developer', 'test-engineer', 'code-reviewer', 'security-reviewer', 'verifier']) {
+    const p = agentFindingsPath(changeName, agent);
+    if (existsSync(p)) try { findings.push(JSON.parse(readFileSync(p, 'utf8'))); } catch {}
+  }
+  return findings;
+}
+
+/** Inject context bundle (fallback for unknown agents). */
+export function injectContextBundle(changeName, agent) {
+  const changeDir = join(REPO_DIR, "openspec", "changes", changeName);
+  const parts = [];
+  for (const fileName of ["proposal.md", "design.md", "tasks.md"]) {
+    const fp = join(changeDir, fileName);
+    if (existsSync(fp)) parts.push(`### ${fileName}\n${readFileSync(fp, "utf8")}`);
+  }
+  const specsDir = join(changeDir, "specs");
+  if (existsSync(specsDir)) {
+    for (const specFile of findSpecMarkdownFiles(specsDir)) {
+      parts.push(`### ${specFile}\n${readFileSync(specFile, "utf8")}`);
+    }
+  }
+  const gitDiff = readGitDiff();
+  if (gitDiff.trim()) parts.push(`### git diff\n${gitDiff}`);
+  return parts.join("\n\n");
+}
+
+/** Read git diff. */
+export function readGitDiff() {
+  try {
+    return execFileSync('git', ['diff'], { cwd: REPO_DIR, encoding: 'utf8' });
+  } catch (e) { console.error(`Warning: could not read git diff: ${e.message}`); return ''; }
+}
+
+/** Find all spec.md files in a specs directory. */
+export function findSpecMarkdownFiles(specsDir) {
+  const results = [];
+  try {
+    const entries = execFileSync('find', [specsDir, '-name', 'spec.md', '-type', 'f'], {
+      encoding: 'utf8',
+    }).trim().split('\n').filter(Boolean);
+    for (const entry of entries) results.push(entry);
+  } catch (e) { console.error(`Warning: could not list spec files: ${e.message}`); }
+  return results;
+}
+
+/** Default risk globs for profile escalation. */
+export const DEFAULT_RISK_GLOBS = [
+  '**/auth/**',
+  '**/migrations/**',
+  '**/sql/**',
+  '**/api/public/**',
+  '**/secrets/**',
+  '**/*.sql',
+  '**/database/**'
+];
+
+/** Check if any changed file matches risk globs. */
+export function matchRiskGlobs(diff, riskGlobs = DEFAULT_RISK_GLOBS) {
+  return matchedRiskGlobs(diff, riskGlobs).length > 0;
+}
+
+/** Return the risk globs matched by the diff (empty when none match). */
+export function matchedRiskGlobs(diff, riskGlobs = DEFAULT_RISK_GLOBS) {
+  const changedFiles = extractChangedFiles(diff);
+  const matched = new Set();
+  for (const file of changedFiles) {
+    for (const glob of riskGlobs) {
+      if (matchGlob(file, glob)) matched.add(glob);
+    }
+  }
+  return Array.from(matched);
+}
+
+/**
+ * Compile a glob (`*`, `?`, `**`) to a regular expression using only Node
+ * built-ins. `**` spans directory boundaries; `*` does not.
+ */
+function globToRegExp(glob) {
+  let source = '';
+  for (let i = 0; i < glob.length; i += 1) {
+    const ch = glob[i];
+    if (ch === '*') {
+      if (glob[i + 1] === '*') {
+        if (glob[i + 2] === '/') {
+          source += '(?:.*/)?';
+          i += 2;
+        } else {
+          source += '.*';
+          i += 1;
+        }
+      } else {
+        source += '[^/]*';
+      }
+    } else if (ch === '?') {
+      source += '[^/]';
+    } else if ('\\^$.|+()[]{}'.includes(ch)) {
+      source += `\\${ch}`;
+    } else {
+      source += ch;
+    }
+  }
+  return new RegExp(`^${source}$`);
+}
+
+/** True when `filePath` matches the glob pattern. */
+function matchGlob(filePath, glob) {
+  return globToRegExp(glob).test(filePath);
+}
+
+/**
+ * Get the effective profile after risk-based escalation.
+ * A `lite` profile touching a risk path is a hard error; any other profile is
+ * escalated to `strict`.
+ */
+export function getEffectiveProfile(declaredProfile, diff, riskGlobs = DEFAULT_RISK_GLOBS) {
+  if (matchRiskGlobs(diff, riskGlobs)) {
+    if (declaredProfile === 'lite') {
+      throw new Error(`lite profile prohibited for changes touching risk paths: ${riskGlobs.join(', ')}. Use standard or strict.`);
+    }
+    if (declaredProfile !== 'strict') {
+      return 'strict';
+    }
+  }
+  return declaredProfile;
+}
+
+/**
+ * Parse the scenario coverage map from tasks.md.
+ * Expects a table headed `| Scenario | Test File | Test Case | Status |`. When
+ * no coverage table is present, `found` is false and `allCovered` is false so the
+ * gap-filler runs by default rather than skipping silently.
+ */
+export function parseCoverageMap(tasksContent) {
+  const lines = tasksContent.split('\n');
+  let inTable = false, found = false, covered = 0, gaps = [];
+  for (const line of lines) {
+    if (/^\|\s*Scenario\s*\|/i.test(line)) { inTable = true; found = true; continue; }
+    if (inTable && line.startsWith('|') && !/^\|[\s:|-]+\|$/.test(line)) {
+      const parts = line.split('|');
+      if (parts.length > 0 && parts[0].trim() === '') parts.shift();
+      if (parts.length > 0 && parts[parts.length - 1].trim() === '') parts.pop();
+      const cells = parts.map(cell => cell.trim());
+      if (cells.length >= 4) {
+        const status = cells[3].toLowerCase();
+        if (status === 'covered') covered++;
+        else if (status !== 'no-deterministic-test') gaps.push(cells[0]);
+      }
+    }
+    if (inTable && !line.startsWith('|')) inTable = false;
+  }
+  return { found, allCovered: found && gaps.length === 0, covered, gaps };
+}
+
+/** Extract changed files from diff. */
+function extractChangedFiles(diff) {
+  const files = new Set();
+  const lines = diff.split('\n');
+  for (const line of lines) {
+    const match = line.match(/^diff --git a\/(.+) b\/(.+)$/);
+    if (match) files.add(match[1]);
+  }
+  return Array.from(files);
 }

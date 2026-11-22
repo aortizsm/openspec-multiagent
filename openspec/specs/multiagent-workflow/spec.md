@@ -288,7 +288,7 @@ In assisted mode, the `@architect` MUST ask and wait at an agent handoff when a 
 - **THEN** the architect stops the pipeline and reports the blocker without inventing a decision
 
 ### Requirement: Correction allowance is declared per change
-The correction allowance for a change MUST be declared in its own OpenSpec configuration, accepting both `correction_rounds` and the OpenSpec extension spelling `x-correction_rounds` in `openspec/changes/<name>/.openspec.yaml`, and MUST NOT be keyed on a change name. The architect-led cycle consumes the allowance and defaults to three rounds when the change declares none. A declared value that is not a positive integer MUST fail closed with a clear error before reading change files or starting any agent.
+The correction allowance for a change MUST be declared in its own OpenSpec configuration, accepting both `correction_rounds` and the extension spelling `x-correction_rounds`, and MUST NOT be keyed on a change name. The architect-led cycle consumes the allowance and defaults to three rounds when none is declared. A value that is not a positive integer MUST fail closed before any agent runs.
 
 #### Scenario: Declared allowance is used
 - **WHEN** a change declares a valid `correction_rounds` value and acceptance-blocking findings require correction
@@ -409,3 +409,283 @@ A correction that changes no behaviour — comments, documentation, or ledger ev
 #### Scenario: Behaviour-changing correction
 - **WHEN** a correction changes behaviour, tests or specifications
 - **THEN** the complete quality sequence runs again before verification
+
+### Requirement: Telemetry recorded per invocation
+The orchestrator MUST append an invocation record to `openspec/changes/<change>/.run.json` at the start of each run, containing `profile`, `timestamp`, and `invocation_id`. Each gate invocation within the run MUST record `attempts`, `wall_ms`, `exit_code`, `verdict`, `fingerprint`, `skipped`, `bundle_bytes`, and `tokens`.
+
+#### Scenario: telemetry recorded per invocation
+- **WHEN** the orchestrator starts for a change
+- **THEN** an invocation record is appended to `openspec/changes/<change>/.run.json` with `profile`, `timestamp`, `invocation_id`
+- **THEN** each gate records `attempts`, `wall_ms`, `exit_code`, `verdict`, `fingerprint`, `skipped`, `bundle_bytes`, `tokens` (or `null`)
+
+#### Scenario: token stats captured when available
+- **WHEN** `opencode stats --json --cost --project . --days 0` succeeds
+- **THEN** telemetry includes `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache_read`, `tokens.cache_write`, `cost`
+- **WHEN** the command fails or returns no data
+- **THEN** telemetry records `tokens: null` and does not block the run
+
+### Requirement: Base-ref and change diff
+On the first run for a change with no `.gates.json`, the orchestrator MUST record `base_ref = git rev-parse HEAD` in `.gates.json`. The change diff MUST equal `git diff <base_ref>` (including staged changes) plus the content of untracked files reported by `git ls-files --others --exclude-standard`, and MUST be persisted to `.opencode/run/<change>/change.diff`.
+
+#### Scenario: base_ref recorded on first run
+- **WHEN** the orchestrator runs for a change with no `.gates.json`
+- **THEN** `base_ref = git rev-parse HEAD` is written to `.gates.json`
+
+#### Scenario: change diff includes staged and untracked
+- **WHEN** `computeChangeDiff(baseRef)` runs
+- **THEN** output equals `git diff <baseRef>` (includes staged) plus content of untracked files from `git ls-files --others --exclude-standard`
+- **THEN** the diff artifact is written to `.opencode/run/<change>/change.diff`
+
+### Requirement: Fingerprint gates
+`computeFingerprint` MUST produce a SHA-256 hex string over the concatenation of `base_ref`, the diff bytes, the proposal/design/tasks/specs bytes, the agent definition file bytes, the resolved model id, and the bundle format version. A gate with a current `PASS` verdict MUST be skipped when its fingerprint matches, recording `skipped: true` and not invoking the agent. Any byte change in the inputs MUST invalidate the gate.
+
+#### Scenario: fingerprint computed from all gate inputs
+- **WHEN** `computeFingerprint` is called
+- **THEN** input = concatenation of: `base_ref` + diff bytes + proposal/design/tasks/specs bytes + agent definition file bytes + resolved model id + bundle format version
+- **THEN** output is a SHA-256 hex string
+
+#### Scenario: gate skipped when fingerprint matches
+- **WHEN** the orchestrator is re-invoked and a gate has `PASS` with an identical fingerprint
+- **THEN** the gate is skipped, telemetry records `skipped: true`, and the agent is not invoked
+
+#### Scenario: gate invalidated when any input changes
+- **WHEN** any byte of the diff/spec/prompt/model/agent-definition changes
+- **THEN** the fingerprint differs and the gate runs normally
+
+#### Scenario: archive requires all gates current PASS
+- **WHEN** `validateAllGatesPass` runs before archive
+- **THEN** all required gates for the profile have `verdict=PASS` and a `fingerprint` matching current inputs
+- **THEN** a missing or stale gate blocks archive
+
+### Requirement: Ledger gate blocks archive on open findings
+`checkLedgerGate` MUST parse the `## Review Findings` ledger from `tasks.md`, requiring a `status` column (`open` or `resolved`), and MUST return `{blocked: true, findings: [...]}` when any row has `severity` `CRITICAL` or `WARNING` with `status=open`. A row with `severity` `WARNING` and `status=resolved` MUST carry non-empty `evidence` to avoid blocking.
+
+#### Scenario: open CRITICAL/WARNING blocks archive
+- **WHEN** `checkLedgerGate` runs and finds a row with `severity=CRITICAL` or `WARNING` and `status=open`
+- **THEN** it returns `{blocked: true, findings: [...]}`
+- **THEN** the orchestrator blocks before `validate`/`archive`
+
+#### Scenario: resolved with evidence does not block
+- **WHEN** a row has `severity=WARNING` and `status=resolved` with non-empty `evidence`
+- **THEN** it does not block archive
+
+#### Scenario: resolved without evidence blocks
+- **WHEN** a row has `severity=CRITICAL` or `WARNING` and `status=resolved` with empty `evidence`
+- **THEN** it is treated as blocking
+
+#### Scenario: ledger contract requires status column
+- **WHEN** `isLedgerHeader` validates a header row
+- **THEN** it requires a column named `status` (case-insensitive) in addition to the existing `id` and `severity` requirements
+
+### Requirement: Transport retry and verdict handling
+A transport failure (agent exits non-zero and produces no verdict artifact) MUST be retried exactly once with the same input, with the attempt count persisted in `.run.json`. A verdict artifact with `verdict=FAIL` MUST NOT be blind-retried; its findings MUST be written to `.opencode/run/<change>/<agent>-findings.json` and routed to the developer as the next cycle's input. Retry/fix counters MUST be read from `.run.json`, not held in memory.
+
+#### Scenario: transport failure retries once
+- **WHEN** an agent exits ≠0 and produces no verdict artifact
+- **THEN** exactly 1 retry occurs with the same input
+- **THEN** the attempt count is persisted in `.run.json`
+
+#### Scenario: verdict FAIL never blind-retries
+- **WHEN** an agent exits 0 but its verdict artifact shows `verdict=FAIL`
+- **THEN** no retry occurs; findings are written to `<agent>-findings.json`
+- **THEN** the developer is invoked next with the findings as input
+
+#### Scenario: max 3 fix cycles then escalate
+- **WHEN** the fix cycle count reaches 3 for a change
+- **THEN** the orchestrator escalates to the architect (throws with evidence)
+
+#### Scenario: counters persisted not in-memory
+- **WHEN** the orchestrator restarts
+- **THEN** retry/fix counters are read from `.run.json`, not from an in-memory Map
+
+### Requirement: Parallel evaluation DAG without sibling kills
+`[code-reviewer, security-reviewer, verifier]` MUST run concurrently and be joined with `Promise.allSettled`, which waits for all three. A failure in one member MUST NOT call `child.kill()` on a sibling. Findings from every group member MUST be consolidated into a single fix pass. A per-agent timeout (default 15 minutes, `ORCHESTRATOR_TIMEOUT_MS`) MUST kill only the hung child and mark only that gate as a transport failure.
+
+#### Scenario: reviewers and verifier run in parallel
+- **WHEN** `runParallelGroupNoKill` executes for `[code-reviewer, security-reviewer, verifier]`
+- **THEN** all three are spawned concurrently
+- **THEN** `Promise.allSettled` waits for all
+
+#### Scenario: sibling failure does not kill others
+- **WHEN** one agent in the parallel group fails
+- **THEN** the other agents continue to completion
+- **THEN** no `child.kill()` is called on siblings
+
+#### Scenario: findings consolidated from all group members
+- **WHEN** the parallel group completes with mixed verdicts
+- **THEN** all findings (including from PASS agents) are consolidated into a single fix pass for the developer
+
+#### Scenario: timeout kills only hung process
+- **WHEN** an agent exceeds `ORCHESTRATOR_TIMEOUT_MS` (default 15 min)
+- **THEN** only that child process is killed
+- **THEN** the gate is marked transport FAIL
+- **THEN** other agents are unaffected
+
+### Requirement: Read-only gates never revert code
+A reviewer or verifier gate failure MUST NOT call `rollbackToCheckpoint`, so the developer's implementation is preserved. An implementation gate (developer or test-engineer) failure MUST revert only that agent's own edits, preserving previous agents' work.
+
+#### Scenario: read-only gates never revert code
+- **WHEN** a reviewer or verifier gate fails
+- **THEN** no `rollbackToCheckpoint` is called
+- **THEN** the developer's implementation is preserved
+
+#### Scenario: implementation gates revert only own edits
+- **WHEN** a developer or test-engineer gate fails
+- **THEN** rollback reverts only changes from that agent's checkpoint
+- **THEN** previous agents' work is preserved
+
+### Requirement: Role-scoped context bundles
+Each agent invocation MUST receive a role-scoped bundle built by a dedicated builder for that role, and each bundle MUST be at most 60 KB. The bundle MUST be passed to the agent by path in the invocation message rather than embedded wholesale in the `OPENCODE_CONTEXT_BUNDLE` environment variable.
+
+#### Scenario: developer bundle contains tasks, specs, design decisions, scout cache, previous findings
+- **WHEN** `buildDeveloperBundle` runs
+- **THEN** the bundle includes `tasks.md`, all `specs/*/spec.md`, `design.md` limited to `## executive_summary`, `## artifacts`, `## risks`, and `## next_recommended`, the scout cache, and previous findings from `.opencode/run/<change>/*-findings.json`
+- **THEN** the bundle size is at most 60 KB
+
+#### Scenario: test-engineer bundle contains scenarios, coverage map, test conventions
+- **WHEN** `buildTestEngineerBundle` runs
+- **THEN** the bundle includes spec scenarios (extracted `WHEN`/`THEN`), the developer's coverage map from `tasks.md` (parseable table), and project test conventions from the `@repo-scout` cache
+- **THEN** the bundle size is at most 60 KB
+
+#### Scenario: code-reviewer bundle contains diff, scenarios, clean-code criteria
+- **WHEN** `buildCodeReviewerBundle` runs
+- **THEN** the bundle includes the change diff (or a summary plus file list if it exceeds the budget), the spec scenarios, and the 12 clean-code criteria from the `clean-code-criteria` spec
+- **THEN** the bundle size is at most 60 KB
+
+#### Scenario: security-reviewer bundle contains diff, security criteria, relevant scenarios
+- **WHEN** `buildSecurityReviewerBundle` runs
+- **THEN** the bundle includes the change diff (or a summary), the 12 security criteria from the `security-criteria` spec, and the scenarios relevant to security (auth, input handling, file ops, secrets)
+- **THEN** the bundle size is at most 60 KB
+
+#### Scenario: verifier bundle contains scenarios, commands, diff-stat
+- **WHEN** `buildVerifierBundle` runs
+- **THEN** the bundle includes the spec scenarios, the project commands from the `@repo-scout` cache, and `git diff --stat`
+- **THEN** the bundle size is at most 60 KB
+
+#### Scenario: bundle passed by path in invocation message
+- **WHEN** the orchestrator invokes an agent
+- **THEN** the message is `"Change: <name>. Context bundle: <path>. Read it first."`
+- **THEN** the `OPENCODE_CONTEXT_BUNDLE` environment variable is not set
+
+#### Scenario: large diff triggers summarization
+- **WHEN** the diff exceeds the 60 KB budget
+- **THEN** a summary plus file list is produced and the full diff path is included in the bundle for on-demand reading
+- **THEN** the bundle size remains at most 60 KB
+
+### Requirement: Repo-scout cache
+`@repo-scout` results MUST be cached per git HEAD under `.opencode/cache/scout-<HEAD>.md`, and the cache MUST be reused for subsequent agents in the same run. A HEAD change MUST invalidate the cache so `@repo-scout` runs again.
+
+#### Scenario: scout cache written once per HEAD
+- **WHEN** the first agent needs scout data
+- **THEN** `@repo-scout` is invoked and its result is cached to `.opencode/cache/scout-<HEAD>.md`
+- **WHEN** subsequent agents need scout data in the same run
+- **THEN** the cache is reused and no additional `@repo-scout` invocation occurs
+
+#### Scenario: cache invalidated on HEAD change
+- **WHEN** `git rev-parse HEAD` differs from the cached HEAD
+- **THEN** the cache is missed and `@repo-scout` is invoked again
+
+### Requirement: Machine-readable verdict contract
+Every agent invocation MUST write a verdict JSON artifact at `.opencode/run/<change>/<agent>-verdict.json`. An agent that produces the artifact MUST exit 0 regardless of the verdict value, while an infrastructure failure (spawn error, timeout, or missing artifact) MUST exit non-zero. The orchestrator MUST read the JSON artifact to determine the verdict, ignoring the exit code for verdict judgment.
+
+#### Scenario: agents write verdict JSON
+- **WHEN** an agent completes
+- **THEN** it writes `.opencode/run/<change>/<agent>-verdict.json` with `agent`, `verdict` (`PASS`/`FAIL`/`UNVERIFIABLE`), `findings` (each with `id`, `severity`, `status`, `evidence`, and optional `file`/`line`), and `summary`
+
+#### Scenario: exit code 0 on artifact production
+- **WHEN** an agent produces verdict JSON (any verdict)
+- **THEN** the exit code is 0
+- **WHEN** an infrastructure failure occurs (spawn error, timeout, or no artifact)
+- **THEN** the exit code is non-zero
+
+#### Scenario: orchestrator reads JSON for judgment
+- **WHEN** the orchestrator collects a gate result
+- **THEN** it reads the verdict JSON and ignores the exit code for verdict judgment
+- **THEN** `verdict=FAIL` routes findings to the developer
+- **THEN** `verdict=UNVERIFIABLE` is recorded with justification
+
+#### Scenario: developer/test-engineer also read bundle
+- **WHEN** the developer or test-engineer is invoked
+- **THEN** it reads the bundle from the path in the message
+- **THEN** no `OPENCODE_CONTEXT_BUNDLE` environment variable is used
+
+### Requirement: Pipeline profile declaration
+The orchestrator MUST read the declared pipeline profile from the change's `.openspec.yaml` (`pipeline`, accepted as `pipeline` or the OpenSpec extension spelling `x-pipeline`), defaulting to `standard` when the key or file is absent. The risk globs MUST also be configurable, defaulting to `**/auth/**`, `**/migrations/**`, `**/sql/**`, `**/api/public/**`, `**/secrets/**`, `**/*.sql`, and `**/database/**`.
+
+#### Scenario: profile declared in .openspec.yaml
+- **WHEN** a change has `.openspec.yaml` with `x-pipeline: lite|standard|strict`
+- **THEN** the orchestrator reads the declared profile
+- **WHEN** there is no `.openspec.yaml` or no `pipeline` key
+- **THEN** the default profile is `standard`
+
+#### Scenario: risk globs configurable
+- **WHEN** `.openspec.yaml` declares `risk_globs: []`
+- **THEN** those globs are used instead of the defaults
+- **WHEN** there is no `risk_globs` key
+- **THEN** the defaults are used: `['**/auth/**', '**/migrations/**', '**/sql/**', '**/api/public/**', '**/secrets/**', '**/*.sql', '**/database/**']`
+
+### Requirement: Risk-based escalation
+A diff that matches any risk glob MUST escalate a `standard` profile to `strict` and MUST be a hard error for a `lite` profile. Telemetry MUST record `profile_escalated: true`, `original_profile`, and `matched_globs` when escalation occurs, and no agent MUST be invoked when a `lite` profile is rejected.
+
+#### Scenario: risk diff forces strict
+- **WHEN** the declared profile is `lite` or `standard` and `matchRiskGlobs(diff, riskGlobs)` is true
+- **THEN** the effective profile is `strict`
+- **THEN** telemetry records `profile_escalated: true`, `original_profile`, and `matched_globs`
+
+#### Scenario: lite with risk diff is hard error
+- **WHEN** the declared profile is `lite` and `matchRiskGlobs(diff, riskGlobs)` is true
+- **THEN** the orchestrator throws the hard error `"lite profile prohibited for changes touching risk paths: <globs>. Use standard or strict."`
+- **THEN** no agents are invoked
+
+### Requirement: Profile-specific DAG composition
+Each profile MUST compose the agent DAG it defines: `lite` runs `developer` → `code-reviewer` (unified clean-code and security checklist) → `verifier` and MUST NOT invoke `test-engineer` or `security-reviewer`; `standard` runs `developer` → `test-engineer` (gap-filler mode) → `[code-reviewer ∥ security-reviewer ∥ verifier]`; `strict` runs `developer` → `test-engineer` (full mode) → `[code-reviewer ∥ security-reviewer ∥ verifier]`.
+
+#### Scenario: lite profile runs developer → code-reviewer → verifier
+- **WHEN** the effective profile is `lite`
+- **THEN** the agent order is `developer` → `code-reviewer` → `verifier`
+- **THEN** `code-reviewer` runs a unified clean-code and security checklist (single reviewer)
+- **THEN** `test-engineer` and `security-reviewer` are not invoked
+
+#### Scenario: standard profile runs developer → test-engineer(gap-filler) → parallel reviewers+verifier
+- **WHEN** the effective profile is `standard`
+- **THEN** the agent order is `developer` → `test-engineer` (mode: gap-filler) → `[code-reviewer ∥ security-reviewer ∥ verifier]`
+- **THEN** `test-engineer` only fills gaps per the coverage map
+
+#### Scenario: strict profile runs developer → test-engineer(full) → parallel reviewers+verifier
+- **WHEN** the effective profile is `strict`
+- **THEN** the agent order is `developer` → `test-engineer` (mode: full) → `[code-reviewer ∥ security-reviewer ∥ verifier]`
+- **THEN** `test-engineer` writes full scenario coverage (not just gaps)
+
+### Requirement: Coverage-map gap-filler
+`parseCoverageMap` MUST read the coverage table from `tasks.md` with columns `Scenario`, `Test File`, `Test Case`, and `Status`, where `Status` is `covered` or `no-deterministic-test` (the latter requiring an architect approval note). When every scenario is covered the `standard` profile MUST omit `test-engineer`; when gaps exist `test-engineer` MUST be invoked with the gaps as input and write tests only for the uncovered scenarios.
+
+#### Scenario: coverage map parsed from tasks.md
+- **WHEN** `parseCoverageMap` reads `tasks.md`
+- **THEN** it finds the table with columns `Scenario`, `Test File`, `Test Case`, and `Status`
+- **THEN** `Status` values are `covered` or `no-deterministic-test` (the latter requiring an architect approval note)
+
+#### Scenario: all scenarios covered → test-engineer skipped
+- **WHEN** `parseCoverageMap` returns `allCovered: true`
+- **THEN** `test-engineer` is omitted from the DAG for the `standard` profile
+- **THEN** telemetry records `test_engineer_skipped: true` with `reason: "full_coverage"`
+
+#### Scenario: gap exists → test-engineer runs gap-filler
+- **WHEN** `parseCoverageMap` returns `allCovered: false` with `gaps: [...]`
+- **THEN** `test-engineer` is invoked with the gaps as input
+- **THEN** `test-engineer` writes tests only for the uncovered scenarios
+
+### Requirement: Quality threshold invariant across profiles
+Every profile MUST satisfy the same quality gates: the `@verifier` MUST run the same scenarios and commands regardless of profile, the ledger gate MUST block archive on any open `CRITICAL`/`WARNING` finding, `openspec validate --strict` MUST pass, and all required gates MUST be current `PASS` with matching fingerprints.
+
+#### Scenario: all profiles satisfy identical quality gates
+- **WHEN** any profile completes
+- **THEN** `@verifier` runs the same scenarios (verifier bundle unchanged)
+- **THEN** the ledger gate blocks on any open `CRITICAL`/`WARNING` finding
+- **THEN** `openspec validate --strict` passes
+- **THEN** all required gates are current `PASS` with matching fingerprints
+
+#### Scenario: verifier suite scope unchanged by profile
+- **WHEN** the effective profile is `lite`, `standard`, or `strict`
+- **THEN** the verifier receives the same scenarios bundle
+- **THEN** the verifier runs the same commands
+- **THEN** the verifier reports per-scenario `PASS`/`FAIL`/`UNVERIFIABLE`

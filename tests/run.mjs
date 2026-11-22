@@ -1627,13 +1627,14 @@ function assertPhaseOrder(plan) {
   assert.deepStrictEqual(positions, [...positions].sort((left, right) => left - right));
 }
 
-const FAKE_NPX_SCRIPT = `const { appendFileSync, existsSync, writeFileSync } = require("node:fs");
+const FAKE_NPX_SCRIPT = `const { appendFileSync, existsSync, mkdirSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const args = process.argv.slice(2);
 const eventDir = process.env.ORCHESTRATION_EVENTS;
 const record = (event) => appendFileSync(join(eventDir, "events.log"), event + "\\n");
 if (args[0] === "opencode") {
   const phase = args[args.indexOf("--agent") + 1];
+  const changeName = args[args.length - 1];
   record(phase + ":start");
   if (["code-reviewer", "security-reviewer"].includes(phase)) {
     writeFileSync(join(eventDir, phase + ".started"), "started");
@@ -1645,6 +1646,11 @@ if (args[0] === "opencode") {
     if (!markerPaths.every(existsSync)) process.exit(8);
   }
   const exitCode = process.env.FAIL_STAGE === phase ? 1 : 0;
+  if (exitCode === 0) {
+    const verdictDir = join(process.cwd(), ".opencode", "run", changeName);
+    mkdirSync(verdictDir, { recursive: true });
+    writeFileSync(join(verdictDir, phase + "-verdict.json"), JSON.stringify({ agent: phase, verdict: "PASS", findings: [], summary: "fake agent pass" }));
+  }
   record(phase + ":end:" + exitCode);
   process.exit(exitCode);
 }
@@ -1691,12 +1697,12 @@ function writePlatformOpencodeShim(shimPath) {
   }
 }
 
-function createIsolatedChange(root) {
+function createIsolatedChange(root, tasksContent = "# Tasks\n\n- [ ] Test runtime sequence\n") {
   const changeDir = join(root, "openspec", "changes", "runtime-sequencing-test");
   mkdirSync(join(changeDir, "specs", "feature"), { recursive: true });
   writeFileSync(join(changeDir, "proposal.md"), "# Proposal\n\n## Intent\n## Why\n## What Changes\n");
   writeFileSync(join(changeDir, "design.md"), "# Design\n\n## status\n## executive_summary\n## artifacts\n## risks\n## next_recommended\n");
-  writeFileSync(join(changeDir, "tasks.md"), "# Tasks\n\n- [ ] Test runtime sequence\n");
+  writeFileSync(join(changeDir, "tasks.md"), tasksContent);
   writeFileSync(join(changeDir, ".openspec.yaml"), "schema: spec-driven\n");
   writeFileSync(join(changeDir, "specs", "feature", "spec.md"), "# Feature\n");
 }
@@ -1708,14 +1714,14 @@ function initializeIsolatedGit(root) {
   for (const gitCommand of [init, stage, commit]) assert.strictEqual(gitCommand.status, 0, gitCommand.stderr);
 }
 
-function createIsolatedOrchestrationRepo() {
+function createIsolatedOrchestrationRepo(tasksContent) {
   const root = mkdtempSync(join(tmpdir(), "osm-orchestrate-runtime-"));
   mkdirSync(join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "bin"), { recursive: true });
   copyFileSync(join(SCRIPTS, "orchestrate.mjs"), join(root, "scripts", "orchestrate.mjs"));
   copyFileSync(join(SCRIPTS, "lib.mjs"), join(root, "scripts", "lib.mjs"));
   copyFileSync(join(SCRIPTS, "rollback.mjs"), join(root, "scripts", "rollback.mjs"));
-  createIsolatedChange(root);
+  createIsolatedChange(root, tasksContent);
   writeFakeNpx(join(root, "bin"));
   initializeIsolatedGit(root);
   return root;
@@ -1779,7 +1785,9 @@ function assertSuccessfulRuntimeSequence(events) {
 }
 
 function assertTestEngineerFailureStopsPipeline(events) {
-  assert.strictEqual(events.filter((event) => event === "test-engineer:end:1").length, 3);
+  // Transport failure retries exactly once (spec: "transport failure retries
+  // once") => 1 initial attempt + 1 retry = 2 failing invocations.
+  assert.strictEqual(events.filter((event) => event === "test-engineer:end:1").length, 2);
   assert.ok(!events.some((event) => /^(code-reviewer|security-reviewer|verifier|validate|archive):/.test(event)));
 }
 
@@ -1789,6 +1797,35 @@ integrationTest("orchestrate: runtime phases wait for completion and reviewers o
     const orchestration = runIsolatedOrchestration(isolatedRoot);
     assert.strictEqual(orchestration.status, 0, orchestration.stderr);
     assertSuccessfulRuntimeSequence(readOrchestrationEvents(isolatedRoot));
+  } finally {
+    rmSync(isolatedRoot, { recursive: true, force: true });
+  }
+});
+
+function assertTestEngineerSkipped(events) {
+  assert.ok(!events.some((event) => event.startsWith("test-engineer:")), "test-engineer must be skipped");
+  assert.ok(runtimeEventIndex(events, "developer:end:0") < runtimeEventIndex(events, "code-reviewer:start"));
+  assert.ok(runtimeEventIndex(events, "verifier:end:0") < runtimeEventIndex(events, "validate:start"));
+  assert.ok(runtimeEventIndex(events, "validate:end:0") < runtimeEventIndex(events, "archive:start"));
+}
+
+integrationTest("orchestrate: standard profile skips test-engineer on full coverage", () => {
+  const fullCoverageTasks = [
+    "# Tasks",
+    "",
+    "## Coverage Map",
+    "",
+    "| Scenario | Test File | Test Case | Status |",
+    "|----------|-----------|-----------|--------|",
+    "| s1 | a.test.ts | covers s1 | covered |",
+    "| s2 | a.test.ts | covers s2 | covered |",
+    "",
+  ].join("\n");
+  const isolatedRoot = createIsolatedOrchestrationRepo(fullCoverageTasks);
+  try {
+    const orchestration = runIsolatedOrchestration(isolatedRoot);
+    assert.strictEqual(orchestration.status, 0, orchestration.stderr);
+    assertTestEngineerSkipped(readOrchestrationEvents(isolatedRoot));
   } finally {
     rmSync(isolatedRoot, { recursive: true, force: true });
   }

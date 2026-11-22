@@ -1,83 +1,11 @@
 #!/usr/bin/env node
 
+import { spawnSync, spawn, execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { saveCheckpoint, rollbackToCheckpoint, saveImplementationCheckpoint, rollbackImplementation, noopCheckpoint, noopRollback } from './rollback.mjs';
 import {
-  writeRoleBundle,
-  readRoleBundle,
-  buildDeveloperBundle,
-  buildTestEngineerBundle,
-  buildCodeReviewerBundle,
-  buildSecurityReviewerBundle,
-  buildVerifierBundle,
-  writeVerdict,
-  readVerdict,
-  readScoutCache,
-  writeScoutCache,
-  agentBundlePath, spawnSync, spawn, execFileSync } from 'node:child_process';
-import {
-  writeRoleBundle,
-  readRoleBundle,
-  buildDeveloperBundle,
-  buildTestEngineerBundle,
-  buildCodeReviewerBundle,
-  buildSecurityReviewerBundle,
-  buildVerifierBundle,
-  writeVerdict,
-  readVerdict,
-  readScoutCache,
-  writeScoutCache,
-  agentBundlePath, fileURLToPath } from 'node:url';
-import {
-  writeRoleBundle,
-  readRoleBundle,
-  buildDeveloperBundle,
-  buildTestEngineerBundle,
-  buildCodeReviewerBundle,
-  buildSecurityReviewerBundle,
-  buildVerifierBundle,
-  writeVerdict,
-  readVerdict,
-  readScoutCache,
-  writeScoutCache,
-  agentBundlePath, dirname, join } from 'node:path';
-import {
-  writeRoleBundle,
-  readRoleBundle,
-  buildDeveloperBundle,
-  buildTestEngineerBundle,
-  buildCodeReviewerBundle,
-  buildSecurityReviewerBundle,
-  buildVerifierBundle,
-  writeVerdict,
-  readVerdict,
-  readScoutCache,
-  writeScoutCache,
-  agentBundlePath, existsSync, readFileSync } from 'node:fs';
-import {
-  writeRoleBundle,
-  readRoleBundle,
-  buildDeveloperBundle,
-  buildTestEngineerBundle,
-  buildCodeReviewerBundle,
-  buildSecurityReviewerBundle,
-  buildVerifierBundle,
-  writeVerdict,
-  readVerdict,
-  readScoutCache,
-  writeScoutCache,
-  agentBundlePath, saveCheckpoint, rollbackToCheckpoint, saveImplementationCheckpoint, rollbackImplementation, noopCheckpoint, noopRollback } from './rollback.mjs';
-import {
-  writeRoleBundle,
-  readRoleBundle,
-  buildDeveloperBundle,
-  buildTestEngineerBundle,
-  buildCodeReviewerBundle,
-  buildSecurityReviewerBundle,
-  buildVerifierBundle,
-  writeVerdict,
-  readVerdict,
-  readScoutCache,
-  writeScoutCache,
-  agentBundlePath,
   appendRunTelemetry,
   readRunTelemetry,
   captureTokenStats,
@@ -90,15 +18,41 @@ import {
   loadGates,
   saveGate,
   validateAllGatesPass,
-  
   agentVerdictPath,
   agentFindingsPath,
+  agentBundlePath,
+  changeDiffPath,
+  summarizeDiff,
+  findSpecMarkdownFiles,
+  writeRoleBundle,
+  readRoleBundle,
+  buildDeveloperBundle,
+  buildTestEngineerBundle,
+  buildCodeReviewerBundle,
+  buildSecurityReviewerBundle,
+  buildVerifierBundle,
+  writeVerdict,
+  readVerdict,
+  readScoutCache,
+  writeScoutCache,
+  buildAgentBundle,
+  DEFAULT_RISK_GLOBS,
+  matchRiskGlobs,
+  getEffectiveProfile,
+  matchedRiskGlobs,
+  parseCoverageMap,
 } from './lib.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PROJECT_ROOT = join(__dirname, '..');
 const CHANGES_DIR = join(PROJECT_ROOT, 'openspec', 'changes');
+
+const REQUIRED_DESIGN_FIELDS = ['status', 'executive_summary', 'artifacts', 'risks', 'next_recommended'];
+const CONTEXT_FILES = ['proposal.md', 'design.md', 'tasks.md'];
+const ORCHESTRATOR_COMMAND = 'node scripts/orchestrate.mjs';
+const BUNDLE_FORMAT_VERSION = '1';
+const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 const AGENTS = [
   'developer',
@@ -108,11 +62,6 @@ const AGENTS = [
   'verifier'
 ];
 
-const REQUIRED_DESIGN_FIELDS = ['status', 'executive_summary', 'artifacts', 'risks', 'next_recommended'];
-const CONTEXT_FILES = ['proposal.md', 'design.md', 'tasks.md'];
-const ORCHESTRATOR_COMMAND = 'node scripts/orchestrate.mjs';
-const BUNDLE_FORMAT_VERSION = '1';
-const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 function printUsage() {
   console.log(`
@@ -202,10 +151,38 @@ function loadOpenSpecConfig(changeName) {
   for (const line of content.split('\n')) {
     const match = line.match(/^([\w-]+):\s*(.*)$/);
     if (match) {
-      config[match[1].trim()] = match[2].trim();
+      const rawKey = match[1].trim();
+      // OpenSpec 1.14.3 only accepts tool metadata under an `x-` prefix; accept
+      // both spellings by normalizing `x-correction_rounds` -> `correction_rounds`.
+      const key = rawKey.startsWith('x-') ? rawKey.slice(2) : rawKey;
+      config[key] = match[2].trim();
     }
   }
   return config;
+}
+
+/** Agent DAG for each pipeline profile. */
+const PROFILE_DAGS = {
+  lite: { sequential: ['developer'], parallel: ['code-reviewer', 'verifier'] },
+  standard: { sequential: ['developer', 'test-engineer'], parallel: ['code-reviewer', 'security-reviewer', 'verifier'] },
+  strict: { sequential: ['developer', 'test-engineer'], parallel: ['code-reviewer', 'security-reviewer', 'verifier'] },
+};
+
+/** Parse a `risk_globs` config value (JSON array or comma list), defaulting to the built-in globs. */
+function parseRiskGlobsValue(raw) {
+  if (!raw) return DEFAULT_RISK_GLOBS;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(String);
+  } catch {
+    // not JSON; fall through to comma-separated parsing
+  }
+  const parts = raw
+    .replace(/^\[|\]$/g, '')
+    .split(',')
+    .map((part) => part.trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean);
+  return parts.length > 0 ? parts : DEFAULT_RISK_GLOBS;
 }
 
 function designGate(changeName) {
@@ -268,26 +245,51 @@ function validateDesignFields(changeDir) {
   }
 }
 
+/** Split a markdown table row into trimmed cells, dropping the empty edges. */
+function parseLedgerCells(line) {
+  const parts = line.split('|');
+  if (parts.length > 0 && parts[0].trim() === '') parts.shift();
+  if (parts.length > 0 && parts[parts.length - 1].trim() === '') parts.pop();
+  return parts.map(cell => cell.trim());
+}
+
+/** True when a row is the ledger header (needs `id`, `severity`, `status` columns). */
 function isLedgerHeader(line) {
-  const columns = line.split('|').map(c => c.trim().toLowerCase());
-  return columns.length >= 9
+  const columns = parseLedgerCells(line).map(cell => cell.toLowerCase());
+  return columns.length >= 3
     && columns[0] === 'id'
-    && columns[2] === 'severity'
-    && columns.some(c => c.includes('evidence'))
-    && columns.some(c => c === 'status');
+    && columns.includes('severity')
+    && columns.includes('status');
 }
 
-function readLedgerSectionWithoutHeader(sectionLines) {
-  const tableRows = sectionLines.filter(
-    line => line.startsWith('|') && line.endsWith('|')
-  );
-  if (tableRows.length > 0) {
-    throw new Error('Review Findings section has no valid ledger table in tasks.md.');
+/**
+ * Parse the Review Findings ledger from tasks.md.
+ * Returns the header flag, the column names, and the data rows as cell arrays.
+ */
+function parseReviewLedgerContent(tasksContent) {
+  const lines = tasksContent.split('\n');
+  let headerFound = false;
+  let columns = [];
+  const rows = [];
+  for (const line of lines) {
+    if (!line.startsWith('|')) {
+      if (headerFound) break;
+      continue;
+    }
+    if (/^\|[\s:|-]+\|$/.test(line)) continue; // separator row
+    if (!headerFound && isLedgerHeader(line)) {
+      headerFound = true;
+      columns = parseLedgerCells(line).map(cell => cell.toLowerCase());
+      continue;
+    }
+    if (headerFound) {
+      rows.push(parseLedgerCells(line));
+    }
   }
-  return { exists: true, rows: [] };
+  return { headerFound, columns, rows };
 }
 
-export { designGate, validateProposalSections };
+export { designGate, validateProposalSections, parseReviewLedgerContent };
 
 function injectContextBundle(changeName, agent) {
   const changeDir = join(CHANGES_DIR, changeName);
@@ -318,20 +320,6 @@ function injectContextBundle(changeName, agent) {
   return bundleParts.join('\n\n');
 }
 
-function findSpecMarkdownFiles(specsDir) {
-  const results = [];
-  try {
-    const entries = execFileSync('find', [specsDir, '-name', 'spec.md', '-type', 'f'], {
-      encoding: 'utf8',
-    }).trim().split('\n').filter(Boolean);
-    for (const entry of entries) {
-      results.push(entry);
-    }
-  } catch (error) {
-    console.error(`Warning: could not list spec files: ${error.message}`);
-  }
-  return results;
-}
 
 function readGitDiff() {
   try {
@@ -425,16 +413,21 @@ function checkLedgerGate(changeName) {
   const tasksPath = join(changeDir, 'tasks.md');
   if (!existsSync(tasksPath)) return { blocked: false, findings: [] };
   const tasksContent = readFileSync(tasksPath, 'utf8');
-  const { headerFound, rows } = parseReviewLedgerContent(tasksContent);
+  const { headerFound, columns, rows } = parseReviewLedgerContent(tasksContent);
   if (!headerFound) return { blocked: false, findings: [] };
+  const severityIndex = columns.indexOf('severity');
+  const statusIndex = columns.indexOf('status');
+  const evidenceIndex = columns.indexOf('evidence');
+  if (severityIndex < 0 || statusIndex < 0) return { blocked: false, findings: [] };
   const blockedFindings = [];
   for (const cells of rows) {
-    if (cells.length >= 3) {
-      const severity = cells[2].toUpperCase();
-      const status = cells.length >= 8 ? cells[7].toLowerCase() : 'open';
-      if ((severity === 'CRITICAL' || severity === 'WARNING') && status === 'open') {
-        blockedFindings.push({ severity, cells });
-      }
+    const severity = (cells[severityIndex] || '').toUpperCase();
+    const status = (cells[statusIndex] || 'open').toLowerCase();
+    const evidence = evidenceIndex >= 0 ? (cells[evidenceIndex] || '').trim() : '';
+    if (severity !== 'CRITICAL' && severity !== 'WARNING') continue;
+    if (status === 'open') blockedFindings.push({ severity, cells, reason: 'open' });
+    else if (status === 'resolved' && evidence === '') {
+      blockedFindings.push({ severity, cells, reason: 'resolved without evidence' });
     }
   }
   return { blocked: blockedFindings.length > 0, findings: blockedFindings };
@@ -487,26 +480,25 @@ async function runAgentWithGate(changeName, agent, telemetryInvocation, gateStar
 
   console.log(`\n=== Running ${agent} for change "${changeName}" ===`);
   const agentStartTime = Date.now();
+  const bundlePath = agentBundlePath(changeName, agent);
 
-  // Spawn agent with timeout
+  // Spawn agent with timeout - pass bundle path via stdin
   const timeoutMs = parseInt(process.env.ORCHESTRATOR_TIMEOUT_MS, 10) || DEFAULT_TIMEOUT_MS;
   const child = spawn(
-      'opencode',
-      ['run', '--agent', agent, '--', changeName],
-      {
-        cwd: PROJECT_ROOT,
-        env: buildAgentEnv(changeName, agent),
-        stdio: 'inherit',
-      }
-    );
     'opencode',
     ['run', '--agent', agent, '--', changeName],
     {
       cwd: PROJECT_ROOT,
       env: buildAgentEnv(changeName, agent),
-      stdio: 'inherit',
+      stdio: ['pipe', 'inherit', 'inherit'],
     }
   );
+
+  // Send bundle and verdict paths to the agent via stdin
+  const verdictPath = agentVerdictPath(changeName, agent);
+  child.stdin.write(`Change: ${changeName}. Context bundle: ${bundlePath}. Read it first. Write your verdict JSON to: ${verdictPath}
+`);
+  child.stdin.end();
 
   let timedOut = false;
   const timeoutHandle = setTimeout(() => {
@@ -620,17 +612,19 @@ async function main() {
     return;
   }
 
+  // Load declared profile and configurable risk globs
+  const openSpecConfig = loadOpenSpecConfig(changeName);
+  const declaredProfile = openSpecConfig.pipeline || 'standard';
+  const riskGlobs = parseRiskGlobsValue(openSpecConfig.risk_globs);
+
   // Load or create telemetry invocation record
   const invocationId = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const profile = loadOpenSpecConfig(changeName).pipeline || 'standard';
   const telemetryInvocation = {
     invocation_id: invocationId,
-    profile,
+    profile: declaredProfile,
     timestamp: new Date().toISOString(),
     gates: [],
   };
-
-  console.log(`\n🚀 Starting orchestration for change "${changeName}" (profile: ${profile})`);
 
   // Capture base_ref on first run
   let baseRef = getBaseRef(changeName);
@@ -643,15 +637,46 @@ async function main() {
   }
 
   // Compute and persist change diff
+  let diffContent = '';
   if (baseRef) {
-    const diff = await computeChangeDiff(baseRef);
-    persistChangeDiff(changeName, diff);
-    console.log(`📝 Change diff persisted (${diff.length} chars)`);
+    diffContent = await computeChangeDiff(baseRef);
+    persistChangeDiff(changeName, diffContent);
+    console.log(`📝 Change diff persisted (${diffContent.length} chars)`);
   }
 
-  // New DAG: developer → test-engineer → [code-reviewer ∥ security-reviewer ∥ verifier] → join → ledger → validate → archive
-  const sequentialAgents = ['developer', 'test-engineer'];
-  const parallelAgents = ['code-reviewer', 'security-reviewer', 'verifier'];
+  // Risk-based escalation: a risk-path diff escalates standard -> strict and is a
+  // hard error for lite (no agents then run).
+  const effectiveProfile = getEffectiveProfile(declaredProfile, diffContent, riskGlobs);
+  if (effectiveProfile !== declaredProfile) {
+    const escalGlobs = matchedRiskGlobs(diffContent, riskGlobs);
+    telemetryInvocation.profile_escalated = true;
+    telemetryInvocation.original_profile = declaredProfile;
+    telemetryInvocation.matched_globs = escalGlobs;
+    telemetryInvocation.profile = effectiveProfile;
+    console.log(`⬆️  Profile escalated: ${declaredProfile} → ${effectiveProfile} (risk: ${escalGlobs.join(', ')})`);
+  }
+
+  console.log(`\n🚀 Starting orchestration for change "${changeName}" (profile: ${effectiveProfile})`);
+
+  // DAG composition per effective profile
+  const dag = PROFILE_DAGS[effectiveProfile] || PROFILE_DAGS.standard;
+  let sequentialAgents = [...dag.sequential];
+  const parallelAgents = [...dag.parallel];
+
+  // Gap-filler: the standard profile omits test-engineer when the coverage map
+  // reports full coverage.
+  if (effectiveProfile === 'standard' && sequentialAgents.includes('test-engineer')) {
+    const tasksFilePath = join(CHANGES_DIR, changeName, 'tasks.md');
+    const coverage = existsSync(tasksFilePath)
+      ? parseCoverageMap(readFileSync(tasksFilePath, 'utf8'))
+      : { found: false, allCovered: false, covered: 0, gaps: [] };
+    if (coverage.found && coverage.allCovered) {
+      sequentialAgents = sequentialAgents.filter(agent => agent !== 'test-engineer');
+      telemetryInvocation.test_engineer_skipped = true;
+      telemetryInvocation.test_engineer_skip_reason = 'full_coverage';
+      console.log('⏭️  test-engineer skipped (full coverage)');
+    }
+  }
 
   // Run sequential agents
   for (const agent of sequentialAgents) {
@@ -661,14 +686,14 @@ async function main() {
       console.log(`🔄 Retrying ${agent} (transport failure)...`);
       const retryResult = await runSequentialAgentWithCheckpoint(agent, changeName, telemetryInvocation);
       if (retryResult.transportFailure) {
-        throw new Error(`Agent "${agent}" failed after retry`);
+        throw new Error(`Agent "${agent}" failed after retry. Restart the full pipeline with: node scripts/orchestrate.mjs ${changeName}`);
       }
     } else if (result.verdictFailure) {
       // Verdict FAIL: route to developer for fix cycle (max 3)
       // For now, escalate immediately (fix cycles handled by re-running orchestrator)
-      throw new Error(`Agent "${agent}" verdict FAIL - fix required`);
+      throw new Error(`Agent "${agent}" verdict FAIL - fix required. Restart the full pipeline with: node scripts/orchestrate.mjs ${changeName}`);
     } else if (result.unverifiable) {
-      throw new Error(`Agent "${agent}" UNVERIFIABLE`);
+      throw new Error(`Agent "${agent}" UNVERIFIABLE. Restart the full pipeline with: node scripts/orchestrate.mjs ${changeName}`);
     }
   }
 
@@ -688,7 +713,7 @@ async function main() {
         console.error(`  - ${outcome.agent}: ${outcome.verdict.verdict} (${outcome.verdict.findings?.length || 0} findings)`);
       }
     }
-    throw new Error('Parallel group failed - fix required');
+    throw new Error(`Parallel group failed - fix required. Restart the full pipeline with: node scripts/orchestrate.mjs ${changeName}`);
   }
 
   // Ledger gate
@@ -725,14 +750,22 @@ async function main() {
 }
 
 function runDryRun(changeName) {
-  console.log(`\n📋 Execution plan for change "${changeName}":`);
-  console.log('  1. developer (sequential)');
-  console.log('  2. test-engineer (sequential)');
-  console.log('  3. code-reviewer ∥ security-reviewer ∥ verifier (parallel)');
-  console.log('  4. Ledger gate');
-  console.log('  5. Gate validation (fingerprint)');
-  console.log(`  6. openspec validate ${changeName}`);
-  console.log(`  7. openspec archive ${changeName} --yes`);
+  const declaredProfile = loadOpenSpecConfig(changeName).pipeline || 'standard';
+  const profile = PROFILE_DAGS[declaredProfile] ? declaredProfile : 'standard';
+  const dag = PROFILE_DAGS[profile];
+  console.log(`\n📋 Execution plan for change "${changeName}" (profile: ${profile}):`);
+  dag.sequential.forEach((agent, index) => {
+    console.log(`  ${index + 1}. ${agent} (sequential)`);
+  });
+  const parallelLabel = profile === 'lite'
+    ? 'code-reviewer (unified clean-code + security)'
+    : dag.parallel.join(' ∥ ');
+  const step = dag.sequential.length + 1;
+  console.log(`  ${step}. ${parallelLabel} (parallel)`);
+  console.log(`  ${step + 1}. Ledger gate`);
+  console.log(`  ${step + 2}. Gate validation (fingerprint)`);
+  console.log(`  ${step + 3}. openspec validate ${changeName}`);
+  console.log(`  ${step + 4}. openspec archive ${changeName} --yes`);
   console.log('\nDry run complete. Run without --dry-run to execute.');
 }
 
@@ -757,7 +790,8 @@ function runOpenspecArchive(changeName) {
 }
 
 function buildAgentEnv(changeName, agent) {
-  const bundle = injectContextBundle(changeName, agent);
+  const bundle = buildAgentBundle(changeName, agent);
+  writeRoleBundle(changeName, agent, bundle);
   return {
     ...process.env,
     OPENCODE_NON_INTERACTIVE: '1',
@@ -765,10 +799,6 @@ function buildAgentEnv(changeName, agent) {
   };
 }
 
-function changeDiffPath(changeName) {
-  const runDir = join(PROJECT_ROOT, '.opencode', 'run', changeName);
-  return join(runDir, 'change.diff');
-}
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main();

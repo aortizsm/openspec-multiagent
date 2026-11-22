@@ -27,7 +27,7 @@
     "install-codegraph": "codegraph install --target=opencode --location=global --yes && codegraph init --yes",
     "reinstall": "node scripts/reinstall.mjs",
     "reset": "node scripts/reset.mjs",
-    "test": "node tests/run.mjs && node tests/lib.test.mjs && node tests/agent-model-plugin.test.mjs",
+    "test": "node tests/run.mjs && node tests/lib.test.mjs && node tests/agent-model-plugin.test.mjs && node tests/orchestrator-gates.test.mjs && node tests/context-bundles.test.mjs && node tests/pipeline-profiles.test.mjs && node tests/baseline-util.test.mjs && node tests/init-codegraph.test.mjs",
     "rollback": "node scripts/rollback.mjs rollback",
     "rollback:save": "node scripts/rollback.mjs save",
     "context-bundle": "node scripts/context-bundle.mjs",

@@ -14,6 +14,14 @@ This guide describes the standard OpenSpec workflow and the boundaries of the ni
 
 The standard quality sequence is `@developer → @test-engineer → [@code-reviewer + @security-reviewer] → @verifier`. `@architect` owns the design approval before it and validation/archive after it. Only acceptance-blocking findings — a `CRITICAL`, or a `WARNING` linked to an acceptance criterion or scenario — consume a round and block archive while open; a `SUGGESTION`, a documentation or ledger bookkeeping correction, or a pre-existing issue outside the change's scope is recorded with its disposition and never consumes a round. The allowance is declared per change in its `.openspec.yaml` (`correction_rounds`, default three) and is a correction allowance, not the orchestrator's agent-retry limit. A declared value that is not a positive integer fails closed before any agent runs.
 
+## Orchestrator gates, context bundles, and pipeline profiles
+
+`scripts/orchestrate.mjs` runs the sequence automatically. Each agent gate is incremental and auditable: per-invocation telemetry in `.run.json`, a SHA-256 fingerprint (base_ref + diff + docs/specs + agent definition + model + bundle version) that skips a `PASS` gate whose inputs are unchanged, a diff artifact at `.opencode/run/<change>/change.diff`, and a ledger gate that blocks archive on any open `CRITICAL`/`WARNING` row in `tasks.md`. A transport failure (exit≠0, no verdict artifact) retries once; a verdict `FAIL` never blind-retries and routes its findings to `@developer`. `[code-reviewer ∥ security-reviewer ∥ verifier]` run in parallel and a sibling failure never kills the others.
+
+Before each agent runs, the orchestrator writes a role-scoped context bundle (≤ 60 KB) to `.opencode/run/<change>/<agent>-bundle.md` and passes its path in the invocation message (`Context bundle: <path>. Read it first.`); the agent reads that bundle instead of re-reading the repository, and writes its verdict JSON to `.opencode/run/<change>/<agent>-verdict.json`. `@repo-scout` output is cached per HEAD under `.opencode/cache/scout-<HEAD>.md`.
+
+The pipeline profile is declared per change in its `.openspec.yaml` (`x-pipeline`, default `standard`; risk globs in `x-risk_globs`). `lite` runs `@developer → @code-reviewer (unified clean-code + security) → @verifier`; `standard` and `strict` run `@developer → @test-engineer → [@code-reviewer ∥ @security-reviewer ∥ @verifier]` (gap-filler vs full coverage). A risk-path diff escalates `standard` to `strict` and hard-errors `lite`. Every profile satisfies the same quality gates: the same `@verifier` scenarios and commands, the ledger gate, `openspec validate --strict`, and current `PASS` fingerprints.
+
 ## Agent responsibilities and boundaries
 
 ### Core workflow

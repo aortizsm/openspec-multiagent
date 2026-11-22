@@ -44,9 +44,9 @@
 
 ## Phase 7: Documentation
 
-- [ ] 7.1 Update `AGENTS.md` with new gate semantics, fingerprint skip rule, ledger gate, retry policy, parallel DAG.
-- [ ] 7.2 Update `docs/guides/agent-workflow.md` and `docs/guides/independent-verification.md`.
-- [ ] 7.3 Create `docs/changes/YYYY-MM-DD-harden-orchestrator-gates.md` entry.
+- [x] 7.1 Update `AGENTS.md` with new gate semantics, fingerprint skip rule, ledger gate, retry policy, parallel DAG.
+- [x] 7.2 Update `docs/guides/agent-workflow.md` and `docs/guides/independent-verification.md`.
+- [x] 7.3 Create `docs/changes/YYYY-MM-DD-harden-orchestrator-gates.md` entry.
 
 ## Review Findings
 

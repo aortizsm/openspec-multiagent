@@ -146,9 +146,39 @@ La validación previa ahora se ejecuta a través de `designGate(changeName)` (ve
 
 Cada agente tiene un máximo de 3 reintentos. Si un agente falla 3 veces, el orquestrador se detiene con un mensaje de escalada al `@architect`. El contador de fallos se resetea para cada ejecución. No existe reanudación desde una fase posterior: tras corregir una falla, ejecutar de nuevo `node scripts/orchestrate.mjs <change-name>` para empezar el pipeline completo en `@developer`.
 
-### Context bundle
+### Puertas del orquestrador (harden-orchestrator-gates)
 
-Antes de ejecutar cada agente, el orquestrador llama a `injectContextBundle(changeName, agent)`, que lee `proposal.md`, `design.md`, `tasks.md`, todos los `spec.md` del change y el `git diff` actual, e inyecta todo ese contenido como variable de entorno `OPENCODE_CONTEXT_BUNDLE` al proceso del agente. Esto elimina la necesidad de que el `@architect` pase contexto manualmente.
+El orquestador (`scripts/orchestrate.mjs`) ejecuta cada puerta de agente de forma incremental y auditable:
+
+- **Telemetría**: cada invocación anexa un registro a `openspec/changes/<change>/.run.json` con `profile`, `timestamp` e `invocation_id`; cada puerta registra `attempts`, `wall_ms`, `exit_code`, `verdict`, `fingerprint`, `skipped`, `bundle_bytes` y `tokens`.
+- **Fingerprint**: `computeFingerprint` combina `base_ref`, el diff, proposal/design/tasks/specs, la definición del agente, el modelo resuelto y la versión del formato de bundle. Una puerta con `PASS` y fingerprint idéntico se salta (`skipped: true`); cualquier byte distinto la invalida.
+- **Diff**: `computeChangeDiff(baseRef)` = `git diff <baseRef>` (incluye staged) + contenido de los no rastreados; se persiste en `.opencode/run/<change>/change.diff`.
+- **Ledger gate**: `checkLedgerGate` parsea la tabla `## Review Findings` de `tasks.md` (requiere columna `status`) y bloquea el archivo si hay filas `CRITICAL`/`WARNING` con `status=open` (o `resolved` sin `evidence`).
+- **Reintentos**: un fallo de transporte (exit≠0 y sin artefacto de veredicto) se reintenta **una vez**; un veredicto `FAIL` **nunca** se reintenta a ciegas: sus hallazgos van a `.opencode/run/<change>/<agent>-findings.json` y se enrutan al `@developer`. Los contadores viven en `.run.json`, no en memoria.
+- **DAG paralelo**: `[code-reviewer ∥ security-reviewer ∥ verifier]` corre en paralelo con `Promise.allSettled`; un fallo no mata a los hermanos; el timeout por agente (por defecto 15 min, `ORCHESTRATOR_TIMEOUT_MS`) mata solo al proceso colgado.
+- **Rollback**: las puertas de solo lectura (revisores, verifier) nunca revierten código; las de implementación (`developer`, `test-engineer`) revierten solo sus propios cambios.
+
+### Bundles de contexto por rol y contrato de veredicto (role-scoped-context-bundles)
+
+Antes de ejecutar cada agente, el orquestador construye un bundle acotado (≤ 60 KB) específico del rol y escribe su ruta en `.opencode/run/<change>/<agent>-bundle.md`. El mensaje de invocación indica `Context bundle: <path>. Read it first.` y la ruta del veredicto; cada agente lee primero su bundle en vez de re-leer el repositorio.
+
+- `developer`: `tasks.md`, specs, decisiones de `design.md`, caché de `@repo-scout` y hallazgos previos.
+- `test-engineer`: scenarios del spec, mapa de cobertura de `tasks.md` y convenciones de test.
+- `code-reviewer`: diff (o resumen + lista de ficheros si excede el presupuesto), scenarios y los 12 criterios de código limpio.
+- `security-reviewer`: diff (o resumen), los 12 criterios de seguridad y scenarios relevantes.
+- `verifier`: scenarios, comandos del proyecto y `git diff --stat`.
+
+La caché de `@repo-scout` se reutiliza por HEAD en `.opencode/cache/scout-<HEAD>.md`. Todo agente escribe su veredicto en `.opencode/run/<change>/<agent>-verdict.json` (`PASS`/`FAIL`/`UNVERIFIABLE`) y sale con código 0 salvo fallo de infraestructura.
+
+### Perfiles de pipeline (adaptive-pipeline-profiles)
+
+El perfil se declara por change en `.openspec.yaml` (`x-pipeline`, por defecto `standard`) y los globs de riesgo en `x-risk_globs`.
+
+- `lite`: `developer` → `code-reviewer` (revisión unificada de código limpio + seguridad) → `verifier`; no ejecuta `test-engineer` ni `security-reviewer`.
+- `standard`: `developer` → `test-engineer` (modo gap-filler) → `[code-reviewer ∥ security-reviewer ∥ verifier]`.
+- `strict`: `developer` → `test-engineer` (modo completo) → `[code-reviewer ∥ security-reviewer ∥ verifier]`.
+
+Un diff que toque un glob de riesgo escala `standard` a `strict` y es un error duro para `lite`. En `standard`, si el mapa de cobertura está completo, `test-engineer` se omite (`test_engineer_skipped: true`). Los tres perfiles comparten los mismos gates de calidad: mismo `@verifier` (mismos scenarios y comandos), ledger gate, `openspec validate --strict` y puertas actuales con `PASS` y fingerprint coincidente.
 
 `@ux-designer` genera wireframes (ASCII), especifica tokens de diseño y revisa requisitos de UX en el spec. Solo actúa cuando el cambio incluye UI.
 

@@ -15,3 +15,7 @@ Thumbs.db
 
 # Resolucion local de modelos por agente (config del usuario, no del toolkit)
 .opencode/opencode.jsonc
+
+# Orquestador: artefactos en tiempo de ejecución (telemetría, diffs, bundles, veredictos)
+.opencode/run/
+.opencode/cache/
