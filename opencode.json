@@ -1,0 +1,255 @@
+{
+  "mcp": {
+    "servers": {
+      "openspec": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "openspec-mcp"
+        ]
+      },
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp"
+      },
+      "engram": {
+        "type": "local",
+        "command": [
+          "engram",
+          "mcp"
+        ]
+      },
+      "github": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "@modelcontextprotocol/server-github"
+        ],
+        "env": {
+          "GITHUB_TOKEN": "{env:GITHUB_TOKEN}"
+        }
+      },
+      "filesystem": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/home/noesis/Desarrollos/MISC/opencode-openspec-multiagent"
+        ]
+      }
+    },
+    "market": {
+      "type": "local",
+      "command": ["node", "/home/noesis/Desarrollos/MISC/trading/bot/src/mcp/server.js"],
+      "enabled": true
+    },
+    "codegraph": {
+      "type": "local",
+      "command": [
+        "codegraph",
+        "serve",
+        "--mcp"
+      ],
+      "enabled": true
+    }
+  },
+  "$schema": "https://opencode.ai/config.json",
+  "model": "llamacpp/qwen36-35b-a3b",
+  "default_agent": "architect",
+  "providers": {
+    "llamacpp": {
+      "name": "llama.cpp",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://localhost:9931/v1"
+      },
+      "models": {
+        "nemotron-3.5-lightning-30b-a3b": {
+          "modelID": "nemotron-3.5-lightning-30b-a3b",
+          "name": "Nemotron 3.5 Lightning 30B A3B (llama.cpp)",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        },
+        "qwen35-9b": {
+          "modelID": "qwen35-9b",
+          "name": "Qwen 3.5 9B (llama.cpp)",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        },
+        "qwen35-9b-uncensored": {
+          "modelID": "qwen35-9b-uncensored",
+          "name": "Qwen 3.5 9B Uncensored (llama.cpp)",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        },
+        "qwen36-35b-a3b": {
+          "modelID": "qwen36-35b-a3b",
+          "name": "Qwen 3.6 35B A3B (llama.cpp)",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        },
+        "qwen36-35b-a3b-uncensored": {
+          "modelID": "qwen36-35b-a3b-uncensored",
+          "name": "Qwen 3.6 35B A3B Uncensored (llama.cpp)",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        },
+        "qwen38-27b": {
+          "modelID": "qwen38-27b",
+          "name": "Qwen 3.8 27B (llama.cpp)",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        },
+        "gemma4-12b": {
+          "modelID": "gemma4-12b",
+          "name": "Gemma 4 12B (llama.cpp)",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        },
+        "gpt-oss-20b": {
+          "modelID": "gpt-oss-20b",
+          "name": "GPT OSS 20B (llama.cpp)",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        },
+        "flint-ud-q4-k-xl": {
+          "modelID": "flint-ud-q4-k-xl",
+          "name": "Flint UD Q4_K_XL",
+          "capabilities": {
+            "tools": true,
+            "input": ["text"],
+            "output": ["text"]
+          },
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          }
+        }
+      }
+    },
+    "opencode-go": {
+      "name": "OpenCode Go (Zen)",
+      "package": "@ai-sdk/openai-compatible",
+      "model": "opencode-go/muse-spark-1.3-contributor",
+      "settings": {
+        "baseURL": "https://opencode.ai/inference/go/openai/v1/chat/completions"
+      }
+    }
+  },
+  "agents": {
+    "build": {},
+    "plan": {},
+    "general": {},
+    "explore": {},
+    "architect": {
+      "mode": "primary",
+      "description": "Architects whole implementations. Drives the spec-driven loop; never writes code."
+    },
+    "developer": {
+      "mode": "subagent",
+      "description": "Implementa código PHP (Moodle local plugin), FastAPI y specs OpenSpec."
+    },
+    "code-reviewer": {
+      "mode": "subagent",
+      "description": "Revisa cambios contra las specs OpenSpec, seguridad, reglas de oro y tests."
+    },
+    "diff-summarizer": {
+      "mode": "subagent",
+      "description": "Resume diffs de git y señala puntos de riesgo."
+    },
+    "repo-scout": {
+      "mode": "subagent",
+      "description": "Reporta stack, convenciones y comandos del repositorio."
+    },
+    "verifier": {
+      "mode": "subagent",
+      "description": "Independent verification agent: executes project commands, maps spec scenarios to observable evidence. No-write policy."
+    },
+    "security-reviewer": {
+      "mode": "subagent",
+      "description": "Evaluates code against 12 language-agnostic security criteria. Tags findings CRITICAL/WARNING/SUGGESTION."
+    }
+  }
+}

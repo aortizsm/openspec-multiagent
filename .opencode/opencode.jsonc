@@ -1,0 +1,33 @@
+{"model": "cline-pass/cline-pass/deepseek-v4.1-flash", "agents": {
+  "developer": {
+    "model": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b#thinking"
+  }
+,
+  "test-engineer": {
+  "model": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b#thinking"
+}
+,
+  "verifier": {
+  "model": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b#thinking"
+}
+,
+  "ux-designer": {
+  "model": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b#thinking"
+}
+,
+  "repo-scout": {
+  "model": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b#thinking"
+}
+,
+  "diff-summarizer": {
+  "model": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b#thinking"
+}
+,
+  "code-reviewer": {
+  "model": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b#thinking"
+}
+,
+  "security-reviewer": {
+  "model": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b#thinking"
+}
+}}
